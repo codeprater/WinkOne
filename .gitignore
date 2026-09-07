@@ -1,0 +1,23 @@
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.xcarchive
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# Store assets - kept out of the repo, they're large and not needed to build
+AppStoreScreenshots/
+WINK_AppStoreScreenshots/
+WINK_AppStoreScreenshots 2/
+WINK_AppStoreScreenshots.zip

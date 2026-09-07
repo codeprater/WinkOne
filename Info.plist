@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Finding Winks</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Add a place to your WINK when you want someone to find you.</string>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>WINK tells you when someone sends you a card.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_wink-msg._tcp</string>
+		<string>_wink-msg._udp</string>
+	</array>
+</dict>
+</plist>
