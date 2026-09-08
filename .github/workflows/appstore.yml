@@ -1,16 +1,18 @@
 name: App Store build
 
 # Builds Wink One on a GitHub-hosted macOS runner. Those runners run a RELEASE
-# macOS, so BuildMachineOSBuild comes out as a shipping build number on its own
-# and ITMS-90111 does not apply. Nothing in the archive is edited afterwards.
+# macOS, so BuildMachineOSBuild is a shipping build number and ITMS-90111 does
+# not apply. Nothing in the archive is edited after the build.
 #
 # Required repository secrets (Settings > Secrets and variables > Actions):
-#   ASC_KEY_ID       - App Store Connect API key ID
-#   ASC_ISSUER_ID    - App Store Connect API issuer ID
-#   ASC_KEY_P8       - contents of the AuthKey_XXXX.p8 file
+#   ASC_KEY_ID     - App Store Connect API key ID
+#   ASC_ISSUER_ID  - App Store Connect API issuer ID
+#   ASC_KEY_P8     - full contents of the AuthKey_XXXX.p8 file
 #
-# Create the key at App Store Connect > Users and Access > Integrations >
-# App Store Connect API, with the "App Manager" role.
+# The project needs Xcode 16.4 or newer: project.pbxproj is objectVersion 77
+# and the Swift sources rely on SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
+# The toolchain step below picks the newest Xcode on the runner and fails
+# loudly if it is too old, rather than dying later with confusing errors.
 
 on:
   workflow_dispatch:
@@ -19,34 +21,67 @@ on:
         description: "CFBundleVersion to ship"
         required: true
         default: "7"
+      upload:
+        description: "Upload to App Store Connect (false = build and keep the ipa only)"
+        type: boolean
+        default: true
 
 jobs:
   archive:
-    runs-on: macos-latest
+    runs-on: macos-15
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show runner toolchain
+      - name: Select newest Xcode and report the toolchain
         run: |
+          set -euo pipefail
+          echo "--- host ---"
           sw_vers
-          ls /Applications | grep -i xcode
+          echo "--- installed Xcodes ---"
+          ls -d /Applications/Xcode*.app
+          NEWEST=""
+          NEWEST_VER="0"
+          for app in /Applications/Xcode*.app; do
+            v=$(/usr/bin/plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist" 2>/dev/null || echo 0)
+            echo "  $app -> $v"
+            if [ "$(printf '%s\n%s\n' "$v" "$NEWEST_VER" | sort -V | tail -1)" = "$v" ]; then
+              NEWEST="$app"; NEWEST_VER="$v"
+            fi
+          done
+          echo "Selected: $NEWEST ($NEWEST_VER)"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
           xcodebuild -version
-          xcodebuild -showsdks | grep -i ios || true
+          xcodebuild -showsdks | grep -i "iphoneos" || true
+          MAJOR=${NEWEST_VER%%.*}
+          MINOR=$(echo "$NEWEST_VER" | cut -d. -f2)
+          MINOR=${MINOR:-0}
+          if [ "$MAJOR" -lt 16 ] || { [ "$MAJOR" -eq 16 ] && [ "$MINOR" -lt 4 ]; }; then
+            echo "::error::Runner's newest Xcode is $NEWEST_VER. This project needs 16.4+."
+            exit 1
+          fi
 
       - name: Write App Store Connect API key
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
         run: |
+          set -euo pipefail
+          if [ -z "${ASC_KEY_ID:-}" ] || [ -z "${ASC_KEY_P8:-}" ]; then
+            echo "::error::Missing ASC_KEY_ID / ASC_KEY_P8 repository secrets."
+            exit 1
+          fi
           mkdir -p ~/private_keys
-          printf '%s' "$ASC_KEY_P8" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          printf '%s\n' "$ASC_KEY_P8" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
           chmod 600 ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          head -1 ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
 
       - name: Archive
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
+          set -euo pipefail
           xcodebuild archive \
             -project WinkOne.xcodeproj \
             -scheme WinkOne \
@@ -54,30 +89,34 @@ jobs:
             -destination "generic/platform=iOS" \
             -archivePath "$RUNNER_TEMP/WinkOne.xcarchive" \
             -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CODE_SIGN_STYLE=Automatic \
             DEVELOPMENT_TEAM=N73XW3H4MX \
             CURRENT_PROJECT_VERSION=${{ inputs.build_number }}
 
-      - name: Show stamps as built on the runner
+      - name: Stamps as built on the runner
         run: |
           plutil -p "$RUNNER_TEMP/WinkOne.xcarchive/Products/Applications/WinkOne.app/Info.plist" \
             | grep -E "BuildMachineOSBuild|CFBundleVersion|DTSDK|DTXcode|MinimumOS"
+          echo "BuildMachineOSBuild above must be a release macOS build (no trailing letter)."
 
-      - name: Export and upload to App Store Connect
+      - name: Export ipa
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
+          set -euo pipefail
+          DEST=export
+          if [ "${{ inputs.upload }}" != "true" ]; then DEST=export; fi
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
             <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>upload</string>
+            <key>destination</key><string>$DEST</string>
             <key>teamID</key><string>N73XW3H4MX</string>
             <key>signingStyle</key><string>automatic</string>
             <key>uploadSymbols</key><true/>
@@ -90,13 +129,26 @@ jobs:
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
             -exportPath "$RUNNER_TEMP/export" \
             -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          ls -la "$RUNNER_TEMP/export"
+
+      - name: Upload to App Store Connect
+        if: ${{ inputs.upload }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          IPA=$(find "$RUNNER_TEMP/export" -name '*.ipa' | head -1)
+          echo "Uploading $IPA"
+          xcrun altool --upload-app -f "$IPA" -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: WinkOne-build-${{ inputs.build_number }}
           path: ${{ runner.temp }}/export
-          if-no-files-found: ignore
+          if-no-files-found: warn
