@@ -1,0 +1,102 @@
+name: App Store build
+
+# Builds Wink One on a GitHub-hosted macOS runner. Those runners run a RELEASE
+# macOS, so BuildMachineOSBuild comes out as a shipping build number on its own
+# and ITMS-90111 does not apply. Nothing in the archive is edited afterwards.
+#
+# Required repository secrets (Settings > Secrets and variables > Actions):
+#   ASC_KEY_ID       - App Store Connect API key ID
+#   ASC_ISSUER_ID    - App Store Connect API issuer ID
+#   ASC_KEY_P8       - contents of the AuthKey_XXXX.p8 file
+#
+# Create the key at App Store Connect > Users and Access > Integrations >
+# App Store Connect API, with the "App Manager" role.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "CFBundleVersion to ship"
+        required: true
+        default: "7"
+
+jobs:
+  archive:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show runner toolchain
+        run: |
+          sw_vers
+          ls /Applications | grep -i xcode
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i ios || true
+
+      - name: Write App Store Connect API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          mkdir -p ~/private_keys
+          printf '%s' "$ASC_KEY_P8" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          chmod 600 ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+
+      - name: Archive
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcodebuild archive \
+            -project WinkOne.xcodeproj \
+            -scheme WinkOne \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/WinkOne.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM=N73XW3H4MX \
+            CURRENT_PROJECT_VERSION=${{ inputs.build_number }}
+
+      - name: Show stamps as built on the runner
+        run: |
+          plutil -p "$RUNNER_TEMP/WinkOne.xcarchive/Products/Applications/WinkOne.app/Info.plist" \
+            | grep -E "BuildMachineOSBuild|CFBundleVersion|DTSDK|DTXcode|MinimumOS"
+
+      - name: Export and upload to App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>N73XW3H4MX</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/WinkOne.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: WinkOne-build-${{ inputs.build_number }}
+          path: ${{ runner.temp }}/export
+          if-no-files-found: ignore
