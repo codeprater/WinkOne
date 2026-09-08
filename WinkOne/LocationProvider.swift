@@ -1,7 +1,6 @@
 import Combine
 import CoreLocation
 import Foundation
-import MapKit
 
 @MainActor
 final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDelegate {
@@ -84,13 +83,14 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
         lastGeocoded = location
         geocodeTask?.cancel()
         geocodeTask = Task {
-            guard let request = MKReverseGeocodingRequest(location: location) else { return }
-            let items = try? await request.mapItems
+            // CLGeocoder rather than MKReverseGeocodingRequest: the MapKit
+            // request type is iOS 26+, and this app ships to iOS 18.
+            let placemarks = try? await CLGeocoder().reverseGeocodeLocation(location)
             guard !Task.isCancelled else { return }
-            let item = items?.first
-            placeName = item?.name
-                ?? item?.addressRepresentations?.cityName
-                ?? item?.placemark.locality
+            let placemark = placemarks?.first
+            placeName = placemark?.areasOfInterest?.first
+                ?? placemark?.locality
+                ?? placemark?.name
         }
     }
 }
