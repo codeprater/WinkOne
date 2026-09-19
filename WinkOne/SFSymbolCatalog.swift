@@ -71,6 +71,18 @@ enum SFSymbolCatalog {
         return names.compactMap { name in symbols.first { $0.name == name } }
     }()
 
+    /// VoiceOver should hear "paper plane", not "paperplane.fill".
+    static func spokenLabel(for record: SFSymbolRecord) -> String {
+        let keyword = record.k
+            .split(separator: ",")
+            .first
+            .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        if !keyword.isEmpty { return keyword }
+        return record.n
+            .replacingOccurrences(of: ".", with: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+    }
+
     static func isAvailable(_ name: String) -> Bool {
         UIImage(systemName: name) != nil
     }

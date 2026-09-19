@@ -3,6 +3,19 @@ import Foundation
 import MultipeerConnectivity
 import UIKit
 
+/// One card waiting to be read, with the peer it came from.
+struct IncomingWink: Identifiable, Equatable {
+    let id: UUID
+    let payload: WinkPayload
+    let peer: WinkPeer?
+
+    init(id: UUID = UUID(), payload: WinkPayload, peer: WinkPeer?) {
+        self.id = id
+        self.payload = payload
+        self.peer = peer
+    }
+}
+
 @MainActor
 final class MultipeerManager: NSObject, ObservableObject {
     private let serviceType = "wink-msg"
@@ -12,12 +25,21 @@ final class MultipeerManager: NSObject, ObservableObject {
     private var session: MCSession?
 
     private var pending: [MCPeerID: WinkPayload] = [:]
-    private var locks: Set<String> = []
     private var timeoutTasks: [MCPeerID: Task<Void, Never>] = [:]
+    private var rediscoveryTask: Task<Void, Never>?
 
     @Published var availablePeers: [WinkPeer] = []
-    @Published var incoming: WinkPayload?
-    @Published var incomingPeer: WinkPeer?
+
+    /// Cards wait their turn instead of overwriting each other. Before this a
+    /// second wink arriving mid-read silently replaced the first.
+    @Published private(set) var queue: [IncomingWink] = []
+
+    /// The card on screen right now.
+    var incoming: WinkPayload? { queue.first?.payload }
+    var incomingPeer: WinkPeer? { queue.first?.peer }
+
+    /// How many are stacked up behind it.
+    var waitingCount: Int { max(0, queue.count - 1) }
     @Published var isDiscoverable = true
     @Published var delivery: DeliveryState = .idle
     @Published private(set) var winkName = "Wink"
@@ -60,15 +82,14 @@ final class MultipeerManager: NSObject, ObservableObject {
     }
 
     func isLocked(_ peer: WinkPeer) -> Bool {
-        locks.contains(peer.id)
+        moderation.isLocked(peer.id)
     }
 
     /// Guideline 1.2: a mechanism for users to block abusive users.
     /// Blocking is permanent, survives relaunch, and drops the peer on both
     /// the browse side and the invitation side.
     func block(_ peer: WinkPeer) {
-        moderation.block(peer.winkName)
-        moderation.block(peer.peerId.displayName)
+        moderation.block(key: peer.id, name: peer.winkName)
         availablePeers.removeAll { $0.id == peer.id }
         if incomingPeer?.id == peer.id {
             dismissIncoming()
@@ -95,6 +116,12 @@ final class MultipeerManager: NSObject, ObservableObject {
     }
 
     func send(_ payload: WinkPayload, to peer: WinkPeer) {
+        // Refuse anything that would not survive the wire cap.
+        if let encoded = try? JSONEncoder().encode(payload),
+           encoded.count > WinkLimits.maxWireBytes {
+            delivery = .blocked("That card is too big to send. Try a shorter recording or another photo.")
+            return
+        }
         // Screen outgoing content before it can leave the device.
         let verdict = ContentFilter.check(payload: payload)
         if let reason = verdict.reason {
@@ -131,9 +158,13 @@ final class MultipeerManager: NSObject, ObservableObject {
         }
     }
 
+    /// Advances to the next waiting card rather than clearing the screen.
     func dismissIncoming() {
-        incoming = nil
-        incomingPeer = nil
+        if !queue.isEmpty { queue.removeFirst() }
+    }
+
+    func clearQueue() {
+        queue.removeAll()
     }
 
     private func rebuildSession() {
@@ -166,7 +197,7 @@ final class MultipeerManager: NSObject, ObservableObject {
     }
 
     private var discoveryInfo: [String: String] {
-        ["atm": atmosphere, "nm": winkName]
+        ["atm": atmosphere, "nm": winkName, "uid": PeerIdentity.local]
     }
 
     private func restartAdvertising() {
@@ -187,12 +218,54 @@ final class MultipeerManager: NSObject, ObservableObject {
     private func start() {
         serviceAdvertiser?.startAdvertisingPeer()
         serviceBrowser?.startBrowsingForPeers()
+        startRediscovery()
+    }
+
+    /// Called when the app comes back to the front. iOS suspends the browser
+    /// and the advertiser in the background, and neither reliably picks up
+    /// where it left off — the room looks empty until something kicks them.
+    /// This is the single biggest cause of "it can't see anyone".
+    func wake() {
+        guard isDiscoverable else { return }
+        serviceBrowser?.stopBrowsingForPeers()
+        serviceAdvertiser?.stopAdvertisingPeer()
+        // Peers found before the app slept may no longer be here.
+        availablePeers.removeAll()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self, self.isDiscoverable else { return }
+            self.serviceAdvertiser?.startAdvertisingPeer()
+            self.serviceBrowser?.startBrowsingForPeers()
+            self.startRediscovery()
+        }
     }
 
     private func stop() {
+        rediscoveryTask?.cancel()
+        rediscoveryTask = nil
         serviceAdvertiser?.stopAdvertisingPeer()
         serviceBrowser?.stopBrowsingForPeers()
         availablePeers.removeAll()
+    }
+
+    /// Multipeer browsers go stale on long sessions and after the app has been
+    /// backgrounded — peers that are still in the room stop appearing. Cycling
+    /// the browser on a slow timer brings them back without a relaunch.
+    private func startRediscovery() {
+        rediscoveryTask?.cancel()
+        rediscoveryTask = Task { @MainActor [weak self] in
+            var interval: Duration = .seconds(8)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                // Sweep often while the radar is empty, back off once it is not.
+                interval = (self?.availablePeers.isEmpty ?? true) ? .seconds(8) : .seconds(30)
+                guard let self, self.isDiscoverable, !Task.isCancelled else { return }
+                self.serviceBrowser?.stopBrowsingForPeers()
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                self.serviceBrowser?.startBrowsingForPeers()
+            }
+        }
     }
 
     private func flush(_ peerID: MCPeerID) {
@@ -205,12 +278,8 @@ final class MultipeerManager: NSObject, ObservableObject {
 
         do {
             try session.send(data, toPeers: [peerID], with: .reliable)
-            if payload.kind == .wink {
-                if let peer = availablePeers.first(where: { $0.peerId == peerID }) {
-                    locks.insert(peer.id)
-                } else {
-                    locks.insert("\(peerID.displayName)#\(peerID.hash)")
-                }
+            if payload.kind == .wink, let peer = availablePeers.first(where: { $0.peerId == peerID }) {
+                moderation.lock(peer.id)
             }
             let peerName = availablePeers.first(where: { $0.peerId == peerID })?.winkName ?? peerID.displayName
             delivery = .delivered(payload.kind == .reply ? "Reply delivered" : peerName)
@@ -220,10 +289,10 @@ final class MultipeerManager: NSObject, ObservableObject {
     }
 
     private func unlock(peerID: MCPeerID) {
-        locks.remove("\(peerID.displayName)#\(peerID.hash)")
         if let peer = availablePeers.first(where: { $0.peerId == peerID }) {
-            locks.remove(peer.id)
+            moderation.releaseLock(peer.id)
         }
+        moderation.releaseLock("name:\(peerID.displayName.lowercased())")
     }
 
     static func sanitizedName(_ raw: String) -> String {
@@ -255,7 +324,15 @@ extension MultipeerManager: MCNearbyServiceAdvertiserDelegate {
         }
     }
 
-    nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {}
+    nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
+        Task { @MainActor in
+            // Usually a transient radio or permission hiccup. Back off, retry once.
+            guard isDiscoverable else { return }
+            try? await Task.sleep(for: .seconds(2))
+            guard isDiscoverable else { return }
+            self.serviceAdvertiser?.startAdvertisingPeer()
+        }
+    }
 }
 
 extension MultipeerManager: MCNearbyServiceBrowserDelegate {
@@ -266,22 +343,34 @@ extension MultipeerManager: MCNearbyServiceBrowserDelegate {
     ) {
         Task { @MainActor in
             let name = info?["nm"] ?? peerID.displayName
-            if isBlocked(name) || isBlocked(peerID.displayName) { return }
+            let uid = info?["uid"] ?? ""
+            let peer = WinkPeer(
+                peerId: peerID,
+                winkName: name,
+                atmosphere: info?["atm"] ?? "",
+                uid: uid
+            )
+            // Identity first, so a rename cannot walk around a block.
+            if moderation.isBlocked(key: peer.id) || isBlocked(name) { return }
             // A peer advertising an objectionable display name never appears.
             if ContentFilter.check(name: name).isBlocked {
                 moderation.noteFiltered()
                 return
             }
-            let peer = WinkPeer(
-                peerId: peerID,
-                winkName: name,
-                atmosphere: info?["atm"] ?? ""
-            )
             if let index = availablePeers.firstIndex(where: { $0.peerId == peerID }) {
                 availablePeers[index] = peer
             } else {
                 availablePeers.append(peer)
             }
+        }
+    }
+
+    nonisolated func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
+        Task { @MainActor in
+            guard isDiscoverable else { return }
+            try? await Task.sleep(for: .seconds(2))
+            guard isDiscoverable else { return }
+            self.serviceBrowser?.startBrowsingForPeers()
         }
     }
 
@@ -312,6 +401,11 @@ extension MultipeerManager: MCSessionDelegate {
 
     nonisolated func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
         Task { @MainActor in
+            // Drop oversized frames before decoding them.
+            guard data.count <= WinkLimits.maxWireBytes else {
+                moderation.noteFiltered()
+                return
+            }
             let payload: WinkPayload
             if let decoded = try? JSONDecoder().decode(WinkPayload.self, from: data) {
                 payload = decoded
@@ -321,6 +415,12 @@ extension MultipeerManager: MCSessionDelegate {
                 return
             }
             unlock(peerID: peerID)
+
+            // A card from a newer build than this one.
+            if payload.needsNewerApp {
+                delivery = .blocked("Update WINK to see this card.")
+                return
+            }
 
             // Blocked senders can never reach the screen, even mid-session.
             if isBlocked(payload.fromName) || isBlocked(peerID.displayName) { return }
@@ -333,9 +433,9 @@ extension MultipeerManager: MCSessionDelegate {
             }
 
             moderation.remember(payload)
-            incomingPeer = availablePeers.first(where: { $0.peerId == peerID })
+            let peer = availablePeers.first(where: { $0.peerId == peerID })
                 ?? WinkPeer(peerId: peerID, winkName: payload.fromName, atmosphere: payload.atmosphere)
-            incoming = payload
+            queue.append(IncomingWink(payload: payload, peer: peer))
         }
     }
 

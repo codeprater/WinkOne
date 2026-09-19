@@ -188,6 +188,15 @@ enum ContentFilter {
             let verdict = check(text: place)
             if verdict.isBlocked { return verdict }
         }
+        // 2.0 composers carry their own text.
+        if let caption = message.photoCaption {
+            let verdict = check(text: caption)
+            if verdict.isBlocked { return verdict }
+        }
+        if let word = message.moodWord {
+            let verdict = check(text: word)
+            if verdict.isBlocked { return verdict }
+        }
         return .allowed
     }
 
@@ -369,9 +378,31 @@ enum ContentFilter {
 // MARK: - Stored moderation state
 
 struct BlockedUser: Codable, Identifiable, Hashable {
-    var id: String { name.lowercased() }
+    /// Stable identity key — "uid:<install id>" where the peer advertises one,
+    /// "name:<lowercased>" for peers on older builds. Records written before
+    /// 2.0 have no key and fall back to the name.
+    let key: String
     let name: String
     let date: Date
+
+    var id: String { key }
+
+    init(key: String, name: String, date: Date = Date()) {
+        self.key = key
+        self.name = name
+        self.date = date
+    }
+
+    private enum CodingKeys: String, CodingKey { case key, name, date }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let storedName = try c.decode(String.self, forKey: .name)
+        name = storedName
+        date = try c.decode(Date.self, forKey: .date)
+        key = try c.decodeIfPresent(String.self, forKey: .key)
+            ?? "name:\(storedName.lowercased())"
+    }
 }
 
 struct WinkReport: Codable, Identifiable, Hashable {
@@ -413,6 +444,22 @@ struct ReceivedWink: Codable, Identifiable, Equatable {
     var fromName: String { payload.fromName }
 }
 
+/// A card this device sent. Kept locally only, so "Shared" in the library is
+/// an honest record of what left this phone and to whom — never uploaded.
+struct SentWink: Codable, Identifiable, Equatable {
+    let id: UUID
+    let payload: WinkPayload
+    let toName: String
+    let date: Date
+
+    init(id: UUID = UUID(), payload: WinkPayload, toName: String, date: Date = Date()) {
+        self.id = id
+        self.payload = payload
+        self.toName = toName
+        self.date = date
+    }
+}
+
 enum ReportReason: String, CaseIterable, Identifiable {
     case sexual = "Sexual or explicit content"
     case hate = "Hate speech or a slur"
@@ -432,13 +479,20 @@ final class ModerationStore: ObservableObject {
     static let shared = ModerationStore()
 
     @Published private(set) var blocked: [BlockedUser] = []
+
+    /// One-shot locks, by identity key. Persisted so force-quitting no longer
+    /// clears them — the lock is the app's main anti-spam mechanic.
+    @Published private(set) var locks: Set<String> = []
     @Published private(set) var reports: [WinkReport] = []
     @Published private(set) var received: [ReceivedWink] = []
+    @Published private(set) var sent: [SentWink] = []
     @Published private(set) var filteredCount = 0
 
-    private let blockedKey = "wink.blocked.v2"
+    private let blockedKey = "wink.blocked.v3"
+    private let locksKey = "wink.locks.v1"
     private let reportsKey = "wink.reports.v1"
     private let receivedKey = "wink.received.v1"
+    private let sentKey = "wink.sent.v1"
     private let filteredKey = "wink.filtered.count"
     private let legacyBlockedKey = "wink.blocked"
     private let historyLimit = 100
@@ -450,18 +504,51 @@ final class ModerationStore: ObservableObject {
 
     // MARK: Blocking
 
+    /// Identity-first. A blocked peer stays blocked through any rename.
+    func isBlocked(key: String) -> Bool {
+        guard !key.isEmpty else { return false }
+        return blocked.contains { $0.key == key }
+    }
+
+    /// Kept for surfaces that only know a typed name — the report sheet, and
+    /// peers on builds that predate the advertised identity.
     func isBlocked(_ name: String) -> Bool {
         let needle = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !needle.isEmpty else { return false }
-        return blocked.contains { $0.name.lowercased() == needle }
+        return isBlocked(key: "name:\(needle)")
+            || blocked.contains { $0.name.lowercased() == needle }
+    }
+
+    func block(key: String, name: String) {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let identity = key.isEmpty ? "name:\(clean.lowercased())" : key
+        guard !identity.isEmpty, !isBlocked(key: identity) else { return }
+        blocked.insert(BlockedUser(key: identity, name: clean.isEmpty ? "Unknown sender" : clean), at: 0)
+        // Blocking removes everything that user ever sent, immediately.
+        if !clean.isEmpty {
+            received.removeAll { $0.fromName.lowercased() == clean.lowercased() }
+        }
+        locks.remove(identity)
+        persist()
     }
 
     func block(_ name: String) {
-        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, !isBlocked(clean) else { return }
-        blocked.insert(BlockedUser(name: clean, date: Date()), at: 0)
-        // Blocking removes everything that user ever sent, immediately.
-        received.removeAll { $0.fromName.lowercased() == clean.lowercased() }
+        block(key: "", name: name)
+    }
+
+    // MARK: One-shot locks
+
+    func isLocked(_ key: String) -> Bool { locks.contains(key) }
+
+    func lock(_ key: String) {
+        guard !key.isEmpty else { return }
+        locks.insert(key)
+        persist()
+    }
+
+    func releaseLock(_ key: String) {
+        guard locks.contains(key) else { return }
+        locks.remove(key)
         persist()
     }
 
@@ -499,6 +586,26 @@ final class ModerationStore: ObservableObject {
         if received.count > historyLimit {
             received.removeLast(received.count - historyLimit)
         }
+        persist()
+    }
+
+    func noteSent(_ payload: WinkPayload, to name: String) {
+        // Replies are chatter, not cards worth filing.
+        guard payload.kind == .wink else { return }
+        sent.insert(SentWink(payload: payload, toName: name), at: 0)
+        if sent.count > historyLimit {
+            sent.removeLast(sent.count - historyLimit)
+        }
+        persist()
+    }
+
+    func removeSent(_ wink: SentWink) {
+        sent.removeAll { $0.id == wink.id }
+        persist()
+    }
+
+    func removeAllSent() {
+        sent.removeAll()
         persist()
     }
 
@@ -540,6 +647,13 @@ final class ModerationStore: ObservableObject {
            let decoded = try? decoder.decode([ReceivedWink].self, from: data) {
             received = decoded
         }
+        if let data = defaults.data(forKey: sentKey),
+           let decoded = try? decoder.decode([SentWink].self, from: data) {
+            sent = decoded
+        }
+        if let stored = defaults.stringArray(forKey: locksKey) {
+            locks = Set(stored)
+        }
         filteredCount = defaults.integer(forKey: filteredKey)
     }
 
@@ -549,7 +663,7 @@ final class ModerationStore: ObservableObject {
             return
         }
         for name in legacy where !isBlocked(name) {
-            blocked.append(BlockedUser(name: name, date: Date()))
+            blocked.append(BlockedUser(key: "name:\(name.lowercased())", name: name))
         }
         defaults.removeObject(forKey: legacyBlockedKey)
         persist()
@@ -568,5 +682,9 @@ final class ModerationStore: ObservableObject {
         if let data = try? encoder.encode(received) {
             defaults.set(data, forKey: receivedKey)
         }
+        if let data = try? encoder.encode(sent) {
+            defaults.set(data, forKey: sentKey)
+        }
+        defaults.set(Array(locks), forKey: locksKey)
     }
 }

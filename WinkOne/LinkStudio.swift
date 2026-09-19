@@ -21,7 +21,7 @@ struct LinkStudio: View {
     }
 
     var body: some View {
-        VStack(spacing: 14) {
+        StudioLayout {
             ZStack {
                 WinkCardView(message: current, fromName: fromName, hidesCaption: true)
                     .allowsHitTesting(false)
@@ -52,7 +52,6 @@ struct LinkStudio: View {
                     Spacer(minLength: 120)
                 }
             }
-            .padding(.horizontal, 48)
             .contextMenu {
                 Button("Paste Link") { pasteLink() }
                 if !linkText.isEmpty {
@@ -60,7 +59,7 @@ struct LinkStudio: View {
                     Button("Clear", role: .destructive) { linkText = "" }
                 }
             }
-
+        } controls: {
             Text(pasteHint ? "Pasted." : "Long press the field to paste any link")
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.45))

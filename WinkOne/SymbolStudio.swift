@@ -25,10 +25,10 @@ struct SymbolStudio: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        StudioLayout {
             WinkCardView(message: current, fromName: fromName)
-                .padding(.horizontal, 48)
-
+        } controls: {
+            VStack(spacing: 12) {
             TextField("Caption", text: $caption)
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .multilineTextAlignment(.center)
@@ -58,25 +58,23 @@ struct SymbolStudio: View {
                 .padding(.horizontal, 22)
             }
 
-            ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
-                    ForEach(results) { record in
-                        Button {
-                            selectedName = record.name
-                        } label: {
-                            Image(systemName: record.name)
-                                .font(.system(size: 22, weight: .regular))
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(selectedName == record.name ? WinkColor.night : .white.opacity(0.85))
-                                .frame(width: 52, height: 52)
-                                .background(selectedName == record.name ? WinkColor.volt : Color.white.opacity(0.06))
-                        }
-                        .accessibilityLabel(record.name)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
+                ForEach(results) { record in
+                    Button {
+                        selectedName = record.name
+                    } label: {
+                        Image(systemName: record.name)
+                            .font(.system(size: 22, weight: .regular))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(selectedName == record.name ? WinkColor.night : .white.opacity(0.85))
+                            .frame(width: 52, height: 52)
+                            .background(selectedName == record.name ? WinkColor.volt : Color.white.opacity(0.06))
                     }
+                    .accessibilityLabel(record.name)
                 }
-                .padding(.horizontal, 18)
             }
-            .frame(height: 132)
+            .padding(.horizontal, 18)
+            }
         }
     }
 

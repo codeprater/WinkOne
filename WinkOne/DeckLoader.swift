@@ -8,11 +8,20 @@ enum DeckLoader {
         Atmosphere(name: "Gen-Z", icon: "bolt.fill", line: "Slang. Unmuted."),
         Atmosphere(name: "Symbols", icon: "square.grid.2x2.fill", line: "Caption any SF Symbol"),
         Atmosphere(name: "Handwritten", icon: "pencil.and.scribble", line: "Pencil or finger"),
-        Atmosphere(name: "Links", icon: "link", line: "Paste a link and send")
+        Atmosphere(name: "Links", icon: "link", line: "Paste a link and send"),
+        Atmosphere(name: "Voice", icon: "waveform", line: "Three seconds, out loud"),
+        Atmosphere(name: "Photo", icon: "photo.fill", line: "One picture, no metadata"),
+        Atmosphere(name: "Mood", icon: "circle.fill", line: "One color, one word"),
+        Atmosphere(name: "Emoji", icon: "face.smiling.inverse", line: "Up to three, nothing else"),
+        Atmosphere(name: "Zodiac", icon: "sparkles", line: "All twelve signs")
     ]
 
-    static func loadDecks() -> [WinkDeck] {
-        [
+    /// Built once. `WinkMessage.id` is a stored UUID now, so rebuilding the
+    /// decks on every access would hand SwiftUI fresh identities each render
+    /// and break `ForEach` diffing in the card deck and the reply row.
+    static func loadDecks() -> [WinkDeck] { cachedDecks }
+
+    private static let cachedDecks: [WinkDeck] = [
             WinkDeck(name: "Gameday", atmosphere: "Stadium", messages: gameday),
             WinkDeck(name: "Culture", atmosphere: "Stadium", messages: culture),
             WinkDeck(name: "Gentleman", atmosphere: "Lounge", messages: gentleman),
@@ -21,12 +30,11 @@ enum DeckLoader {
             WinkDeck(name: "Can You?", atmosphere: "Daily Grind", messages: canYou),
             WinkDeck(name: "S.O.S.", atmosphere: "Daily Grind", messages: sos),
             WinkDeck(name: "Calls", atmosphere: "Gen-Z", messages: genZCalls),
-            WinkDeck(name: "Verdicts", atmosphere: "Gen-Z", messages: genZVerdicts)
-        ]
-    }
+        WinkDeck(name: "Verdicts", atmosphere: "Gen-Z", messages: genZVerdicts)
+    ]
 
     static func pack(_ name: String, in atmosphere: String) -> WinkDeck? {
-        loadDecks().first { $0.name == name && $0.atmosphere == atmosphere }
+        cachedDecks.first { $0.name == name && $0.atmosphere == atmosphere }
     }
 
     private static func cards(_ texts: [String], pack: String, atmosphere: String, ink: CardInk) -> [WinkMessage] {

@@ -30,6 +30,37 @@ struct ContentView: View {
     @State private var linkText = ""
     @State private var safetySheet: SafetySheet?
 
+    // 2.0 composers
+    @State private var voiceData: Data?
+    @State private var voiceDuration: TimeInterval = 0
+    @State private var voiceLevels: [CGFloat] = []
+    @State private var voiceCaption = ""
+    @State private var photoData: Data?
+    @State private var photoCaption = ""
+    @State private var photoSymbol: String?
+    @State private var moodHex = MoodPalette.defaultHex
+    @State private var moodWord = ""
+    @State private var emojiSequence = ""
+    @State private var zodiacSign = Zodiac.aries.rawValue
+    @State private var zodiacCaption = ""
+
+    /// Secret Wink modifier. Applies to whichever composer is active.
+    @State private var secretUntilTapped = false
+
+    /// The dock collapses to a pill when the radar has the floor.
+    @State private var dockExpanded = true
+    @State private var showInbox = false
+    @State private var sharedCardHeight: CGFloat = 400
+    @State private var dockHidden = false
+    @State private var idleTask: Task<Void, Never>?
+    @State private var showLibrary = false
+    @State private var restoringCard = false
+    @AppStorage("wink.dockAutoHide") private var dockAutoHide = true
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// Which composer the atmosphere string currently names.
+    private var composer: Composer { Composer(atmosphere: selectedAtmosphere) }
+
     /// Guideline 1.2: nothing can be composed or received until the user has
     /// accepted the current terms, which state the zero-tolerance policy.
     private var hasAgreed: Bool { agreedTermsVersion == WinkAgreement.version }
@@ -49,38 +80,89 @@ struct ContentView: View {
 
     private var currentCard: WinkMessage {
         var card: WinkMessage
-        if selectedAtmosphere == "Symbols" {
+
+        switch composer {
+        case .symbols:
             card = WinkMessage(
                 text: symbolCaption,
                 pack: "Symbols",
-                atmosphere: "Symbols",
-                ink: .volt,
+                atmosphere: composer.atmosphere,
+                ink: composer.ink,
                 symbolName: selectedSymbol
             )
-        } else if selectedAtmosphere == "Links" {
+        case .links:
             card = WinkMessage(
                 text: LinkPaste.normalized(linkText) ?? linkText,
                 pack: "Links",
-                atmosphere: "Links",
-                ink: .ice,
+                atmosphere: composer.atmosphere,
+                ink: composer.ink,
                 symbolName: "link"
             )
-        } else if selectedAtmosphere == "Handwritten" {
+        case .handwritten:
             card = WinkMessage(
                 text: handwrittenCaption,
                 pack: "Handwritten",
-                atmosphere: "Handwritten",
-                ink: .gold,
+                atmosphere: composer.atmosphere,
+                ink: composer.ink,
                 drawingData: drawing.dataRepresentation()
             )
-        } else {
+        case .voice:
+            // `text` doubles as the v1 fallback: a build-10 client cannot play
+            // audio, so it renders this line instead of an empty card.
+            card = WinkMessage(
+                text: voiceCaption.isEmpty ? "Voice WINK - update WINK to hear it" : voiceCaption,
+                pack: "Voice",
+                atmosphere: composer.atmosphere,
+                ink: composer.ink,
+                voiceData: voiceData,
+                voiceDuration: voiceDuration > 0 ? voiceDuration : nil
+            )
+        case .photo:
+            card = WinkMessage(
+                text: photoCaption.isEmpty ? "Photo WINK - update WINK to see it" : photoCaption,
+                pack: "Photo",
+                atmosphere: composer.atmosphere,
+                ink: composer.ink,
+                photoData: photoData,
+                photoCaption: photoCaption.isEmpty ? nil : photoCaption,
+                photoSymbolName: photoSymbol
+            )
+        case .mood:
+            card = WinkMessage(
+                text: moodWord,
+                pack: "Mood",
+                atmosphere: composer.atmosphere,
+                ink: composer.ink,
+                moodColorHex: moodHex,
+                moodWord: moodWord.isEmpty ? nil : moodWord
+            )
+        case .emoji:
+            card = WinkMessage(
+                text: emojiSequence,
+                pack: "Emoji",
+                atmosphere: composer.atmosphere,
+                ink: composer.ink,
+                emojiSequence: emojiSequence.isEmpty ? nil : emojiSequence
+            )
+        case .zodiac:
+            card = WinkMessage(
+                text: zodiacCaption.isEmpty ? (Zodiac.named(zodiacSign)?.line ?? "") : zodiacCaption,
+                pack: "Zodiac",
+                atmosphere: composer.atmosphere,
+                ink: composer.ink,
+                zodiacSign: zodiacSign
+            )
+        case .stadium, .lounge, .dailyGrind, .genZ:
             let cards = currentDeck.messages
             if cards.isEmpty {
-                card = WinkMessage(text: "WINK", pack: "WINK", atmosphere: selectedAtmosphere, ink: .gold)
+                card = WinkMessage(text: "WINK", pack: "WINK", atmosphere: composer.atmosphere, ink: .gold)
             } else {
                 card = cards[min(selectedCardIndex, cards.count - 1)]
             }
         }
+
+        card.secretUntilTapped = secretUntilTapped
+
         if location.isSharing {
             card.latitude = location.latitude
             card.longitude = location.longitude
@@ -97,36 +179,73 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            WinkColor.night.ignoresSafeArea()
-            radar
-                .allowsHitTesting(false)
+            WinkRadar(
+                peers: nearby,
+                isLocked: { manager.isLocked($0) },
+                isDiscoverable: manager.isDiscoverable,
+                onSelect: { peer in send(currentCard, to: peer, kind: .wink) },
+                onBlock: { peer in manager.block(peer) },
+                onBackgroundTap: {
+                    stopIdleTimer()
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.85)) {
+                        dockExpanded = false
+                        dockHidden = true
+                    }
+                }
+            )
 
+            GeometryReader { geo in
             VStack(spacing: 0) {
                 header
                     .padding(.horizontal, 22)
                     .padding(.top, 8)
 
-                nearbyStrip
-                    .padding(.top, 18)
-
-                if selectedAtmosphere != "Symbols" && selectedAtmosphere != "Handwritten" && selectedAtmosphere != "Links" {
-                    Spacer(minLength: 12)
+                if nearby.isEmpty {
+                    radarHint
+                        .padding(.top, 14)
                 }
 
+                Spacer(minLength: 10)
+
                 cardDeck
-                    .padding(.horizontal, (selectedAtmosphere == "Symbols" || selectedAtmosphere == "Handwritten" || selectedAtmosphere == "Links") ? 0 : 28)
+                    .padding(.horizontal, composer.isStudio ? 0 : 28)
 
-                atmosphereRow
-                    .padding(.top, 18)
+                Spacer(minLength: 10)
 
-                packRow
-                    .padding(.top, 10)
-
-                actionRow
-                    .padding(.horizontal, 22)
-                    .padding(.top, 18)
-                    .padding(.bottom, 16)
+                // Room for the dock so the card never sits under it.
+                Color.clear.frame(height: dockRoom)
             }
+            .onAppear { measure(geo.size) }
+            .onChange(of: geo.size) { _, size in measure(size) }
+            .onChange(of: dockExpanded) { _, expanded in
+                measure(geo.size)
+                if expanded { nudgeDock() }
+            }
+            .onChange(of: dockHidden) { _, _ in measure(geo.size) }
+            .onChange(of: selectedAtmosphere) { _, _ in nudgeDock(expand: true) }
+            .onDisappear { stopIdleTimer() }
+            .environment(\.winkCardHeight, sharedCardHeight)
+            }
+
+            VStack {
+                Spacer()
+                WinkDock(
+                    isExpanded: $dockExpanded,
+                    isHidden: $dockHidden,
+                    selectedAtmosphere: $selectedAtmosphere,
+                    selectedDeckIndex: $selectedDeckIndex,
+                    selectedCardIndex: $selectedCardIndex,
+                    secretUntilTapped: $secretUntilTapped,
+                    visibleDecks: visibleDecks,
+                    unreadCount: moderation.received.count,
+                    locationSharing: location.isSharing,
+                    locationLabel: location.isSharing ? (location.placeName ?? "Locating") : "Place",
+                    onToggleLocation: { location.toggle() },
+                    onSend: presentSendSheet,
+                    onOpenInbox: { showInbox = true }
+                )
+            }
+            .zIndex(1)
 
             if let incoming = manager.incoming {
                 IncomingWinkView(
@@ -141,7 +260,8 @@ struct ContentView: View {
                     onReport: { safetySheet = .report(reportTargetForIncoming(incoming)) },
                     onBlock: { manager.blockCurrentSender() },
                     onRemove: { removeIncoming(incoming) },
-                    onClose: { manager.dismissIncoming() }
+                    onClose: { manager.dismissIncoming() },
+                    waitingCount: manager.waitingCount
                 )
                 .zIndex(2)
             }
@@ -172,6 +292,7 @@ struct ContentView: View {
             prepareHaptics()
             isPulsing = true
             WinkNotify.shared.configure()
+            nudgeDock()
             guard hasAgreed else { return }
             if !onboarded {
                 showOnboarding = true
@@ -182,8 +303,14 @@ struct ContentView: View {
             }
         }
         .onChange(of: selectedAtmosphere) { _, newValue in
-            selectedDeckIndex = 0
-            selectedCardIndex = 0
+            // load() sets the atmosphere and then aims at an exact card, so it
+            // raises this flag to keep the reset from landing on top of it.
+            if restoringCard {
+                restoringCard = false
+            } else {
+                selectedDeckIndex = 0
+                selectedCardIndex = 0
+            }
             manager.setAtmosphere(newValue)
             if newValue != "Handwritten" {
                 InkToolkit.hide()
@@ -212,6 +339,46 @@ struct ContentView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showLibrary) {
+            WinkLibrary(
+                peers: nearby,
+                fromName: displayName,
+                onUse: { card in
+                    showLibrary = false
+                    load(card)
+                },
+                onQuickSend: { card, peer in
+                    showLibrary = false
+                    send(card, to: peer, kind: .wink)
+                },
+                onClose: { showLibrary = false }
+            )
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Coming back from the background is where discovery usually dies.
+            if phase == .active {
+                manager.wake()
+                nudgeDock(expand: true)
+            } else {
+                stopIdleTimer()
+            }
+        }
+        .onChange(of: showLibrary) { _, open in
+            if open { stopIdleTimer() } else { nudgeDock(expand: true) }
+        }
+        .sheet(isPresented: $showInbox) {
+            InboxView(
+                moderation: moderation,
+                onReport: { wink in
+                    showInbox = false
+                    safetySheet = .report(ReportTarget(
+                        name: wink.fromName,
+                        evidence: wink.payload.text
+                    ))
+                },
+                onDismiss: { showInbox = false }
+            )
         }
         .sheet(item: $safetySheet) { sheet in
             switch sheet {
@@ -243,7 +410,8 @@ struct ContentView: View {
                     send(currentCard, to: peer, kind: .wink)
                     showPeerPicker = false
                 },
-                onBlock: { manager.block($0) }
+                onBlock: { manager.block($0) },
+                onCancel: { showPeerPicker = false }
             )
             .presentationDetents([.medium])
         }
@@ -301,6 +469,17 @@ struct ContentView: View {
             }
             .accessibilityLabel(manager.isDiscoverable ? "Ghost Mode Off" : "Ghost Mode On")
             Button {
+                stopIdleTimer()
+                showLibrary = true
+            } label: {
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Your winks: recent, shared, and every pack")
+
+            Button {
                 safetySheet = .center
             } label: {
                 Image(systemName: "shield.lefthalf.filled")
@@ -312,93 +491,114 @@ struct ContentView: View {
         }
     }
 
+    private var dockRoom: CGFloat {
+        if dockHidden { return 44 }
+        return dockExpanded ? 190 : 78
+    }
+
+    /// The dock gets out of the way on its own. Any touch brings it back, then
+    /// it steps down a rung at a time: expanded for five seconds of quiet,
+    /// collapsed for four more, then just the grab tab. Cancelled and restarted
+    /// on every interaction, so it never disappears mid-tap.
+    private func nudgeDock(expand: Bool = false) {
+        idleTask?.cancel()
+        if expand { dockExpanded = true }
+        if dockHidden { dockHidden = false }
+        guard dockAutoHide else { return }
+        idleTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.85)) { dockExpanded = false }
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) { dockHidden = true }
+        }
+    }
+
+    private func stopIdleTimer() {
+        idleTask?.cancel()
+        idleTask = nil
+    }
+
+
+    /// One height for every card on this screen. A Mood card, an Emoji card and
+    /// a Stadium card are literally the same size because they all read this.
+    /// Derived from the 3:4 portrait ratio, then capped by whatever vertical
+    /// room the header and the dock leave behind.
+    private func measure(_ size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        let cardWidth = size.width - 56
+        let ideal = cardWidth / InviteCard.aspectRatio
+        let room = size.height - 150 - dockRoom
+        sharedCardHeight = max(300, min(ideal, max(300, room)))
+    }
+
     private var displayName: String {
         let name = winkName.trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty ? "Set your name" : name
     }
 
-    private var nearbyStrip: some View {
-        Group {
-            if nearby.isEmpty {
-                HStack(spacing: 10) {
-                    Image(systemName: WinkSymbol.nearby)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.35))
-                    Text(manager.isDiscoverable
-                         ? "Nobody on \(selectedAtmosphere) yet. Hit Send to AirDrop or iMessage."
-                         : "Ghost Mode. You're off the radar.")
-                        .font(WinkFont.body(13))
-                        .foregroundStyle(.white.opacity(0.45))
-                }
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 28)
-                    .frame(height: 72)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 18) {
-                        ForEach(nearby) { peer in
-                            Button {
-                                send(currentCard, to: peer, kind: .wink)
-                            } label: {
-                                VStack(spacing: 8) {
-                                    ZStack {
-                                        Circle()
-                                            .fill(manager.isLocked(peer) ? Color.white.opacity(0.12) : WinkColor.volt)
-                                            .frame(width: 52, height: 52)
-                                        Text(String(peer.winkName.prefix(1)).uppercased())
-                                            .font(WinkFont.brand(20))
-                                            .foregroundStyle(manager.isLocked(peer) ? .white.opacity(0.4) : WinkColor.night)
-                                    }
-                                    Text(peer.winkName)
-                                        .font(WinkFont.label(10))
-                                        .foregroundStyle(.white)
-                                        .lineLimit(1)
-                                        .frame(width: 68)
-                                    if manager.isLocked(peer) {
-                                        Text("ONE SHOT")
-                                            .font(WinkFont.label(8))
-                                            .tracking(0.8)
-                                            .foregroundStyle(WinkColor.volt.opacity(0.7))
-                                    }
-                                }
-                            }
-                            .disabled(manager.isLocked(peer))
-                            .contextMenu {
-                                Button("Ignore", role: .destructive) {
-                                    manager.block(peer)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 22)
-                }
-                .frame(height: 96)
-            }
-        }
-    }
-
     private var cardDeck: some View {
         Group {
-            if selectedAtmosphere == "Symbols" {
+            switch composer {
+            case .symbols:
                 SymbolStudio(
                     selectedName: $selectedSymbol,
                     caption: $symbolCaption,
                     fromName: displayName,
                     placeName: location.isSharing ? location.placeName : nil
                 )
-            } else if selectedAtmosphere == "Links" {
+            case .links:
                 LinkStudio(
                     linkText: $linkText,
                     fromName: displayName,
                     placeName: location.isSharing ? location.placeName : nil
                 )
-            } else if selectedAtmosphere == "Handwritten" {
+            case .handwritten:
                 HandwrittenStudio(
                     drawing: $drawing,
                     caption: $handwrittenCaption,
                     toolkitActive: true
                 )
-            } else {
+            case .voice:
+                VoiceStudio(
+                    voiceData: $voiceData,
+                    voiceDuration: $voiceDuration,
+                    caption: $voiceCaption,
+                    bakedLevels: $voiceLevels,
+                    fromName: displayName,
+                    placeName: location.isSharing ? location.placeName : nil
+                )
+            case .photo:
+                PhotoStudio(
+                    photoData: $photoData,
+                    caption: $photoCaption,
+                    overlaySymbol: $photoSymbol,
+                    fromName: displayName,
+                    placeName: location.isSharing ? location.placeName : nil,
+                    onReject: { reason in manager.delivery = .blocked(reason) }
+                )
+            case .mood:
+                MoodStudio(
+                    colorHex: $moodHex,
+                    word: $moodWord,
+                    fromName: displayName,
+                    placeName: location.isSharing ? location.placeName : nil
+                )
+            case .emoji:
+                EmojiStudio(
+                    sequence: $emojiSequence,
+                    fromName: displayName,
+                    placeName: location.isSharing ? location.placeName : nil
+                )
+            case .zodiac:
+                ZodiacStudio(
+                    sign: $zodiacSign,
+                    caption: $zodiacCaption,
+                    fromName: displayName,
+                    placeName: location.isSharing ? location.placeName : nil
+                )
+            case .stadium, .lounge, .dailyGrind, .genZ:
                 TabView(selection: $selectedCardIndex) {
                     ForEach(Array(currentDeck.messages.enumerated()), id: \.element.id) { index, wink in
                         WinkCardView(message: decorated(wink), fromName: displayName)
@@ -407,93 +607,7 @@ struct ContentView: View {
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(height: 440)
-            }
-        }
-    }
-
-    private var atmosphereRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 22) {
-                ForEach(atmospheres) { atmosphere in
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedAtmosphere = atmosphere.name
-                        }
-                    } label: {
-                        VStack(spacing: 6) {
-                            Text(atmosphere.name.uppercased())
-                                .font(WinkFont.label(11))
-                                .tracking(1.4)
-                                .foregroundStyle(selectedAtmosphere == atmosphere.name ? WinkColor.volt : .white.opacity(0.38))
-                            Rectangle()
-                                .fill(selectedAtmosphere == atmosphere.name ? WinkColor.volt : Color.clear)
-                                .frame(height: 2)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 22)
-        }
-    }
-
-    private var packRow: some View {
-        Group {
-            if selectedAtmosphere == "Symbols" || selectedAtmosphere == "Handwritten" || selectedAtmosphere == "Links" {
-                EmptyView()
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 18) {
-                        ForEach(Array(visibleDecks.enumerated()), id: \.element.id) { index, deck in
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    selectedDeckIndex = index
-                                    selectedCardIndex = 0
-                                }
-                            } label: {
-                                Text(deck.name.uppercased())
-                                    .font(WinkFont.label(12))
-                                    .tracking(1.2)
-                                    .foregroundStyle(selectedDeckIndex == index ? .white : .white.opacity(0.35))
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 22)
-                }
-            }
-        }
-    }
-
-    private var actionRow: some View {
-        HStack(spacing: 12) {
-            Button {
-                location.toggle()
-            } label: {
-                VStack(spacing: 4) {
-                    Image(systemName: location.isSharing ? "mappin.circle.fill" : "mappin")
-                        .font(.system(size: 18, weight: .semibold))
-                        .symbolEffect(.bounce, value: location.isSharing)
-                    Text(location.isSharing ? (location.placeName ?? "Locating") : "Place")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(location.isSharing ? WinkColor.volt : .white.opacity(0.45))
-                .frame(width: 72)
-            }
-            .accessibilityLabel(location.isSharing ? "Location on" : "Add location")
-
-            Button(action: presentSendSheet) {
-                HStack(spacing: 8) {
-                    Image(systemName: WinkSymbol.send)
-                        .font(.system(size: 16, weight: .bold))
-                    Text("SEND")
-                        .font(WinkFont.label(13))
-                        .tracking(1.2)
-                }
-                .foregroundStyle(WinkColor.night)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(WinkColor.volt)
+                .frame(height: sharedCardHeight)
             }
         }
     }
@@ -532,22 +646,19 @@ struct ContentView: View {
             .transition(.opacity)
     }
 
-    private var radar: some View {
-        ZStack {
-            ForEach(0..<3, id: \.self) { i in
-                Circle()
-                    .stroke(WinkColor.volt.opacity(0.12), lineWidth: 1)
-                    .scaleEffect(isPulsing ? 1.8 : 0.7)
-                    .opacity(isPulsing ? 0 : 0.55)
-                    .animation(
-                        .easeOut(duration: 3.2).repeatForever(autoreverses: false).delay(Double(i) * 0.55),
-                        value: isPulsing
-                    )
-            }
+    /// Shown only when the radar is empty, so the screen is never just rings.
+    private var radarHint: some View {
+        HStack(spacing: 10) {
+            Image(systemName: WinkSymbol.nearby)
+                .font(.system(size: 15, weight: .semibold))
+            Text(manager.isDiscoverable
+                 ? "Looking… they need WINK open too, on the same Wi-Fi or in Bluetooth range."
+                 : "Ghost Mode. You're off the radar and it's off for you.")
+                .font(WinkFont.body(13))
         }
-        .frame(height: 420)
-        .offset(y: -90)
-        .allowsHitTesting(false)
+        .foregroundStyle(.white.opacity(0.45))
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 32)
     }
 
     private func decorated(_ card: WinkMessage) -> WinkMessage {
@@ -566,6 +677,9 @@ struct ContentView: View {
             manager.delivery = .blocked(reason)
             return
         }
+        // Every 2.0 field has to ride along, or a Voice Wink arrives silent, a
+        // Mood card arrives grey and an Emoji card arrives empty. A v1 client
+        // ignores what it does not know, which is why these are all optional.
         let payload = WinkPayload(
             text: card.text,
             pack: card.pack,
@@ -577,14 +691,82 @@ struct ContentView: View {
             drawingData: card.drawingData,
             latitude: card.latitude,
             longitude: card.longitude,
-            placeName: card.placeName
+            placeName: card.placeName,
+            voiceData: card.voiceData,
+            voiceDuration: card.voiceDuration,
+            photoData: card.photoData,
+            photoCaption: card.photoCaption,
+            photoSymbolName: card.photoSymbolName,
+            moodColorHex: card.moodColorHex,
+            moodWord: card.moodWord,
+            emojiSequence: card.emojiSequence,
+            zodiacSign: card.zodiacSign,
+            secretUntilTapped: card.secretUntilTapped
         )
         manager.send(payload, to: peer)
+        moderation.noteSent(payload, to: peer.winkName)
         playHapticSuccess()
+    }
+
+    /// Long-press "Open in Composer" — drop a card back into whichever studio
+    /// made it, with its own fields restored, not just its text.
+    private func load(_ card: WinkMessage) {
+        restoringCard = card.atmosphere != selectedAtmosphere
+        selectedAtmosphere = card.atmosphere
+        secretUntilTapped = card.secretUntilTapped
+
+        switch Composer(atmosphere: card.atmosphere) {
+        case .symbols:
+            selectedSymbol = card.symbolName ?? WinkSymbol.send
+            symbolCaption = card.text
+        case .links:
+            linkText = card.text
+        case .handwritten:
+            if let data = card.drawingData, let restored = try? PKDrawing(data: data) {
+                drawing = restored
+            }
+            handwrittenCaption = card.text
+        case .voice:
+            voiceData = card.voiceData
+            voiceDuration = card.voiceDuration ?? 0
+            voiceLevels = []
+            voiceCaption = card.text
+        case .photo:
+            photoData = card.photoData
+            photoCaption = card.photoCaption ?? ""
+            photoSymbol = card.photoSymbolName
+        case .mood:
+            moodHex = card.moodColorHex ?? MoodPalette.defaultHex
+            moodWord = card.moodWord ?? card.text
+        case .emoji:
+            emojiSequence = card.emojiSequence ?? ""
+        case .zodiac:
+            zodiacSign = card.zodiacSign ?? Zodiac.aries.rawValue
+            zodiacCaption = card.text
+        case .stadium, .lounge, .dailyGrind, .genZ:
+            // Land on the exact card in the exact pack, not just the pack.
+            if let deckIndex = visibleDecks.firstIndex(where: { $0.name == card.pack }) {
+                selectedDeckIndex = deckIndex
+                if let cardIndex = visibleDecks[deckIndex].messages.firstIndex(where: { $0.id == card.id }) {
+                    selectedCardIndex = cardIndex
+                } else {
+                    selectedCardIndex = 0
+                }
+            }
+        }
+        nudgeDock(expand: true)
     }
 
     private func presentSendSheet() {
         let card = currentCard
+
+        // AirDrop and Messages handle a bare audio item inconsistently, so
+        // Voice stays on the Nearby rail until that is verified on device.
+        if composer == .voice {
+            manager.delivery = .blocked("Voice Winks are Nearby only.")
+            return
+        }
+
         // Screen the card before it can reach the share sheet.
         if let reason = ContentFilter.check(message: card).reason {
             moderation.noteFiltered()
@@ -609,6 +791,14 @@ struct ContentView: View {
         }
         if let url = card.mapsURL {
             items.append(url)
+        }
+        // The compressed JPEG travels alongside the rendered card.
+        if let photo = card.photoData {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("wink-photo-\(UUID().uuidString).jpg")
+            if (try? photo.write(to: url)) != nil {
+                items.append(url)
+            }
         }
         shareItems = items
         showShareSheet = true
@@ -731,9 +921,26 @@ struct PeerPickerSheet: View {
     var locked: (WinkPeer) -> Bool
     var onPick: (WinkPeer) -> Void
     var onBlock: (WinkPeer) -> Void
+    var onCancel: () -> Void = {}
 
     var body: some View {
         NavigationStack {
+            Group {
+            if peers.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundStyle(.secondary)
+                    Text("No one nearby yet.")
+                        .font(WinkFont.body(15))
+                    Text("WINK finds people on the same Wi-Fi or within Bluetooth range. Keep this open — it keeps looking.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
             List(peers) { peer in
                 HStack {
                     Button {
@@ -757,8 +964,15 @@ struct PeerPickerSheet: View {
                         .foregroundStyle(.red)
                 }
             }
+            }
+            }
             .navigationTitle("Send to")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                }
+            }
         }
     }
 }
@@ -771,9 +985,13 @@ struct IncomingWinkView: View {
     var onBlock: () -> Void
     var onRemove: () -> Void
     var onClose: () -> Void
+    var waitingCount: Int = 0
 
     @State private var replyIndex = 0
     @State private var opened = false
+    @State private var letterOpened = false
+    @State private var showFullPhoto = false
+    @StateObject private var voice = VoiceRecorder()
 
     private var replyDeck: [WinkMessage] {
         if payload.symbolName != nil {
@@ -799,15 +1017,64 @@ struct IncomingWinkView: View {
                     .tracking(2)
                     .foregroundStyle(WinkColor.volt)
 
-                WinkCardView(message: payload.asMessage, fromName: payload.fromName)
-                    .padding(.horizontal, 36)
-                    .scaleEffect(opened ? 1 : 0.86)
-                    .opacity(opened ? 1 : 0.4)
-                    .onTapGesture {
-                        if let url = payload.asMessage.linkURL {
-                            UIApplication.shared.open(url)
-                        }
+                if waitingCount > 0 {
+                    Text(waitingCount == 1 ? "1 MORE WAITING" : "\(waitingCount) MORE WAITING")
+                        .font(WinkFont.label(10))
+                        .tracking(1.4)
+                        .foregroundStyle(.white.opacity(0.5))
+                        .accessibilityLabel(
+                            waitingCount == 1
+                                ? "One more wink waiting behind this one"
+                                : "\(waitingCount) more winks waiting behind this one"
+                        )
+                }
+
+                // The card arrives as a sealed envelope: flap opens, the folded
+                // letter rises out, the fold falls away. Once it is flat the
+                // real card takes over so every tap on it still works.
+                EnvelopeReveal(
+                    tint: payload.asMessage.ink.accent,
+                    senderName: payload.fromName,
+                    onOpened: { letterOpened = true }
+                ) {
+                    WinkCardView(
+                        message: payload.asMessage,
+                        fromName: payload.fromName,
+                        secretEnabled: true,
+                        onPlayVoice: payload.voiceData == nil ? nil : {
+                            if voice.isPlaying {
+                                voice.stopPlayback()
+                            } else if let data = payload.voiceData {
+                                voice.play(data)
+                            }
+                        },
+                        isPlayingVoice: voice.isPlaying
+                    )
+                }
+                .aspectRatio(InviteCard.aspectRatio, contentMode: .fit)
+                .padding(.horizontal, 36)
+                .onTapGesture {
+                    guard letterOpened else { return }
+                    if payload.photoData != nil {
+                        showFullPhoto = true
+                    } else if let url = payload.asMessage.linkURL {
+                        UIApplication.shared.open(url)
                     }
+                }
+
+                // Nothing to act on until the letter is actually open.
+                Group {
+                if payload.voiceData != nil, !voice.playThroughSilentSwitch {
+                    Button {
+                        voice.playThroughSilentSwitch = true
+                    } label: {
+                        Label("Play even if muted", systemImage: "speaker.slash.fill")
+                            .font(WinkFont.label(11))
+                            .tracking(1)
+                            .foregroundStyle(.white.opacity(0.55))
+                    }
+                    .accessibilityHint("By default a voice wink stays silent when your ringer switch is off")
+                }
 
                 if let url = payload.asMessage.linkURL {
                     Button {
@@ -901,11 +1168,15 @@ struct IncomingWinkView: View {
                 }
                 .padding(.top, 4)
 
-                Button("CLOSE", action: onClose)
+                Button(waitingCount > 0 ? "NEXT" : "CLOSE", action: onClose)
                     .font(WinkFont.label(13))
                     .tracking(1.6)
                     .foregroundStyle(.white)
                     .padding(.bottom, 8)
+                }
+                .opacity(letterOpened ? 1 : 0)
+                .allowsHitTesting(letterOpened)
+                .animation(.easeOut(duration: 0.28), value: letterOpened)
             }
         }
         .onAppear {
@@ -913,6 +1184,42 @@ struct IncomingWinkView: View {
                 opened = true
             }
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        }
+        .onDisappear { voice.reset() }
+        .fullScreenCover(isPresented: $showFullPhoto) {
+            FullPhotoView(data: payload.photoData) { showFullPhoto = false }
+        }
+    }
+}
+
+/// Photos are never shown full-bleed on receipt — the card is a preview and the
+/// recipient decides whether to open it.
+struct FullPhotoView: View {
+    let data: Data?
+    var onClose: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let data, let image = UIImage(data: data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .accessibilityLabel("Photo wink, full screen")
+            }
+            VStack {
+                HStack {
+                    Spacer()
+                    Button(action: onClose) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 30))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .padding(18)
+                    }
+                    .accessibilityLabel("Close the photo")
+                }
+                Spacer()
+            }
         }
     }
 }

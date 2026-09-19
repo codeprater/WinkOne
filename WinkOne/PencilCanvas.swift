@@ -97,7 +97,7 @@ struct HandwrittenStudio: View {
     var toolkitActive: Bool
 
     var body: some View {
-        VStack(spacing: 12) {
+        StudioLayout {
             ZStack {
                 LinearGradient(
                     colors: [Color(red: 0.18, green: 0.14, blue: 0.06), Color(red: 0.42, green: 0.32, blue: 0.10)],
@@ -109,8 +109,8 @@ struct HandwrittenStudio: View {
             }
             .aspectRatio(InviteCard.aspectRatio, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: InviteCard.cornerRadius, style: .continuous))
-            .padding(.horizontal, 36)
-
+        } controls: {
+            VStack(spacing: 12) {
             HStack {
                 Button("Clear") { drawing = PKDrawing() }
                     .font(WinkFont.label(12))
@@ -133,6 +133,7 @@ struct HandwrittenStudio: View {
                         caption = String(newValue.prefix(48))
                     }
                 }
+            }
         }
         .onAppear {
             if toolkitActive == false {
