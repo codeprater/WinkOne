@@ -495,7 +495,11 @@ final class ModerationStore: ObservableObject {
     private let sentKey = "wink.sent.v1"
     private let filteredKey = "wink.filtered.count"
     private let legacyBlockedKey = "wink.blocked"
-    private let historyLimit = 100
+    // 100 cards each carrying a photo was hundreds of megabytes. Forty
+    // thumbnailed cards is a few.
+    private let historyLimit = 40
+    private let historyFile = "wink-history.json"
+    private var historyWriteTask: Task<Void, Never>?
 
     private init() {
         load()
@@ -582,7 +586,9 @@ final class ModerationStore: ObservableObject {
     // MARK: Local history ("the feed")
 
     func remember(_ payload: WinkPayload) {
-        received.insert(ReceivedWink(payload: payload), at: 0)
+        // The card on screen keeps its full-size photo; the archived copy does
+        // not need one.
+        received.insert(ReceivedWink(payload: payload.historySafe), at: 0)
         if received.count > historyLimit {
             received.removeLast(received.count - historyLimit)
         }
@@ -592,7 +598,7 @@ final class ModerationStore: ObservableObject {
     func noteSent(_ payload: WinkPayload, to name: String) {
         // Replies are chatter, not cards worth filing.
         guard payload.kind == .wink else { return }
-        sent.insert(SentWink(payload: payload, toName: name), at: 0)
+        sent.insert(SentWink(payload: payload.historySafe, toName: name), at: 0)
         if sent.count > historyLimit {
             sent.removeLast(sent.count - historyLimit)
         }
@@ -643,14 +649,32 @@ final class ModerationStore: ObservableObject {
            let decoded = try? decoder.decode([WinkReport].self, from: data) {
             reports = decoded
         }
-        if let data = defaults.data(forKey: receivedKey),
-           let decoded = try? decoder.decode([ReceivedWink].self, from: data) {
-            received = decoded
+        if let data = WinkHistoryFile.read(historyFile),
+           let blob = try? decoder.decode(HistoryBlob.self, from: data) {
+            received = blob.received
+            sent = blob.sent
+        } else {
+            // One-time migration off UserDefaults, then the keys are dropped
+            // so the old copies stop being loaded into memory at launch.
+            if let data = defaults.data(forKey: receivedKey),
+               let decoded = try? decoder.decode([ReceivedWink].self, from: data) {
+                received = decoded.prefix(historyLimit).map {
+                    ReceivedWink(id: $0.id, payload: $0.payload.historySafe, date: $0.date)
+                }
+            }
+            if let data = defaults.data(forKey: sentKey),
+               let decoded = try? decoder.decode([SentWink].self, from: data) {
+                sent = decoded.prefix(historyLimit).map {
+                    SentWink(id: $0.id, payload: $0.payload.historySafe, toName: $0.toName, date: $0.date)
+                }
+            }
+            defaults.removeObject(forKey: receivedKey)
+            defaults.removeObject(forKey: sentKey)
+            if !received.isEmpty || !sent.isEmpty { scheduleHistoryWrite() }
         }
-        if let data = defaults.data(forKey: sentKey),
-           let decoded = try? decoder.decode([SentWink].self, from: data) {
-            sent = decoded
-        }
+
+        if received.count > historyLimit { received.removeLast(received.count - historyLimit) }
+        if sent.count > historyLimit { sent.removeLast(sent.count - historyLimit) }
         if let stored = defaults.stringArray(forKey: locksKey) {
             locks = Set(stored)
         }
@@ -669,6 +693,10 @@ final class ModerationStore: ObservableObject {
         persist()
     }
 
+    /// Blocks, reports and locks are small and must survive a crash the
+    /// instant they are made, so they stay in UserDefaults and are written
+    /// synchronously. History is large, changes often, and can afford to lag
+    /// by half a second — it goes to a file, debounced, off the main thread.
     private func persist() {
         let defaults = UserDefaults.standard
         let encoder = JSONEncoder()
@@ -679,12 +707,26 @@ final class ModerationStore: ObservableObject {
         if let data = try? encoder.encode(reports) {
             defaults.set(data, forKey: reportsKey)
         }
-        if let data = try? encoder.encode(received) {
-            defaults.set(data, forKey: receivedKey)
-        }
-        if let data = try? encoder.encode(sent) {
-            defaults.set(data, forKey: sentKey)
-        }
         defaults.set(Array(locks), forKey: locksKey)
+
+        scheduleHistoryWrite()
     }
+
+    private func scheduleHistoryWrite() {
+        historyWriteTask?.cancel()
+        historyWriteTask = Task { @MainActor [weak self] in
+            // A burst of arrivals writes once, not once per card.
+            try? await Task.sleep(for: .milliseconds(600))
+            guard let self, !Task.isCancelled else { return }
+            let blob = HistoryBlob(received: self.received, sent: self.sent)
+            guard let data = try? JSONEncoder().encode(blob) else { return }
+            WinkHistoryFile.write(data, to: self.historyFile)
+        }
+    }
+}
+
+/// Both histories in one file, so a write is one atomic replace.
+private struct HistoryBlob: Codable {
+    var received: [ReceivedWink]
+    var sent: [SentWink]
 }

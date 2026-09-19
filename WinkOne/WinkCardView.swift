@@ -158,7 +158,13 @@ struct WinkCardView: View {
     private var photoInvite: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
-                if let data = message.photoData, let image = UIImage(data: data) {
+                // Decoded once at the size on screen and cached. A raw
+                // UIImage(data:) here re-decoded the whole JPEG every render.
+                if let data = message.photoData,
+                   let image = DecodedImageCache.shared.image(
+                       for: data,
+                       maxPixel: max(geo.size.width, geo.size.height) * 2
+                   ) {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
@@ -720,10 +726,7 @@ struct WinkCardView: View {
 
     private var drawingImage: UIImage? {
         guard !liveDrawing, let data = message.drawingData, !data.isEmpty else { return nil }
-        guard let drawing = try? PKDrawing(data: data) else { return nil }
-        let bounds = drawing.bounds.insetBy(dx: -24, dy: -24)
-        let renderBounds = bounds.isNull || bounds.isEmpty ? CGRect(x: 0, y: 0, width: 400, height: 280) : bounds
-        return drawing.image(from: renderBounds, scale: 3)
+        return DecodedImageCache.shared.drawing(for: data)
     }
 }
 
