@@ -255,12 +255,15 @@ struct VoiceStudio: View {
                 .foregroundStyle(.white)
                 .tint(WinkColor.volt)
                 .padding(.horizontal, 36)
+                .winkWritingTools()
                 .onChange(of: caption) { _, newValue in
                     if newValue.count > WinkLimits.symbolCaption {
                         caption = String(newValue.prefix(WinkLimits.symbolCaption))
                     }
                 }
                 .accessibilityLabel("Caption for your voice wink")
+
+            SuggestLinesRow(composerName: "Voice", target: $caption)
 
             recordButton
 
@@ -288,7 +291,7 @@ struct VoiceStudio: View {
                         voiceDuration = 0
                         bakedLevels = []
                     } label: {
-                        Label("Re-record", systemImage: "arrow.counterclockwise")
+                        Label("Record again", systemImage: "arrow.counterclockwise")
                             .font(WinkFont.label(12))
                             .foregroundStyle(.white.opacity(0.6))
                     }

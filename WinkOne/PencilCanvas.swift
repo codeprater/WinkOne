@@ -128,11 +128,14 @@ struct HandwrittenStudio: View {
                 .foregroundStyle(.white)
                 .tint(WinkColor.volt)
                 .padding(.horizontal, 36)
+                .winkWritingTools()
                 .onChange(of: caption) { _, newValue in
                     if newValue.count > 48 {
                         caption = String(newValue.prefix(48))
                     }
                 }
+
+            SuggestLinesRow(composerName: "Handwritten", target: $caption)
             }
         }
         .onAppear {

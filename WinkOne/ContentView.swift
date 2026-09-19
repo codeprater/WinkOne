@@ -41,8 +41,11 @@ struct ContentView: View {
     @State private var moodHex = MoodPalette.defaultHex
     @State private var moodWord = ""
     @State private var emojiSequence = ""
+    @State private var genmojiData: Data?
     @State private var zodiacSign = Zodiac.aries.rawValue
     @State private var zodiacCaption = ""
+    @State private var nameTagPhoto: Data?
+    @State private var nameTagName = ""
 
     /// Secret Wink modifier. Applies to whichever composer is active.
     @State private var secretUntilTapped = false
@@ -110,7 +113,7 @@ struct ContentView: View {
             // `text` doubles as the v1 fallback: a build-10 client cannot play
             // audio, so it renders this line instead of an empty card.
             card = WinkMessage(
-                text: voiceCaption.isEmpty ? "Voice WINK - update WINK to hear it" : voiceCaption,
+                text: voiceCaption.isEmpty ? "Voice WINK. Update WINK to hear it" : voiceCaption,
                 pack: "Voice",
                 atmosphere: composer.atmosphere,
                 ink: composer.ink,
@@ -119,7 +122,7 @@ struct ContentView: View {
             )
         case .photo:
             card = WinkMessage(
-                text: photoCaption.isEmpty ? "Photo WINK - update WINK to see it" : photoCaption,
+                text: photoCaption.isEmpty ? "Photo WINK. Update WINK to see it" : photoCaption,
                 pack: "Photo",
                 atmosphere: composer.atmosphere,
                 ink: composer.ink,
@@ -142,7 +145,8 @@ struct ContentView: View {
                 pack: "Emoji",
                 atmosphere: composer.atmosphere,
                 ink: composer.ink,
-                emojiSequence: emojiSequence.isEmpty ? nil : emojiSequence
+                emojiSequence: emojiSequence.isEmpty ? nil : emojiSequence,
+                genmojiData: genmojiData
             )
         case .zodiac:
             card = WinkMessage(
@@ -151,6 +155,16 @@ struct ContentView: View {
                 atmosphere: composer.atmosphere,
                 ink: composer.ink,
                 zodiacSign: zodiacSign
+            )
+        case .nameTag:
+            let tagName = nameTagName.isEmpty ? displayName : nameTagName
+            card = WinkMessage(
+                text: tagName,
+                pack: "Name Tag",
+                atmosphere: composer.atmosphere,
+                ink: composer.ink,
+                photoData: nameTagPhoto,
+                nameTagName: tagName
             )
         case .stadium, .lounge, .dailyGrind, .genZ:
             let cards = currentDeck.messages
@@ -205,12 +219,12 @@ struct ContentView: View {
                         .padding(.top, 14)
                 }
 
-                Spacer(minLength: 10)
-
+                // One flexible region between the header and the dock. The
+                // card centers itself inside it and re-centers when the dock
+                // collapses or hides.
                 cardDeck
                     .padding(.horizontal, composer.isStudio ? 0 : 28)
-
-                Spacer(minLength: 10)
+                    .frame(maxHeight: .infinity)
 
                 // Room for the dock so the card never sits under it.
                 Color.clear.frame(height: dockRoom)
@@ -594,6 +608,7 @@ struct ContentView: View {
             case .emoji:
                 EmojiStudio(
                     sequence: $emojiSequence,
+                    genmojiData: $genmojiData,
                     fromName: displayName,
                     placeName: location.isSharing ? location.placeName : nil
                 )
@@ -603,6 +618,14 @@ struct ContentView: View {
                     caption: $zodiacCaption,
                     fromName: displayName,
                     placeName: location.isSharing ? location.placeName : nil
+                )
+            case .nameTag:
+                NameTagStudio(
+                    photoData: $nameTagPhoto,
+                    name: $nameTagName,
+                    fromName: displayName,
+                    placeName: location.isSharing ? location.placeName : nil,
+                    onReject: { reason in manager.delivery = .blocked(reason) }
                 )
             case .stadium, .lounge, .dailyGrind, .genZ:
                 TabView(selection: $selectedCardIndex) {
@@ -614,6 +637,9 @@ struct ContentView: View {
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .frame(height: sharedCardHeight)
+                // Same centering rule the studios follow, so the deck does not
+                // jump when the dock collapses out from under it.
+                .frame(maxHeight: .infinity, alignment: .center)
             }
         }
     }
@@ -658,7 +684,7 @@ struct ContentView: View {
             Image(systemName: WinkSymbol.nearby)
                 .font(.system(size: 15, weight: .semibold))
             Text(manager.isDiscoverable
-                 ? "Looking… they need WINK open too, on the same Wi-Fi or in Bluetooth range."
+                 ? "Looking. They need WINK open too, on the same Wi Fi or in Bluetooth range."
                  : "Ghost Mode. You're off the radar and it's off for you.")
                 .font(WinkFont.body(13))
         }
@@ -707,6 +733,8 @@ struct ContentView: View {
             moodWord: card.moodWord,
             emojiSequence: card.emojiSequence,
             zodiacSign: card.zodiacSign,
+            nameTagName: card.nameTagName,
+            genmojiData: card.genmojiData,
             secretUntilTapped: card.secretUntilTapped
         )
         manager.send(payload, to: peer)
@@ -746,9 +774,13 @@ struct ContentView: View {
             moodWord = card.moodWord ?? card.text
         case .emoji:
             emojiSequence = card.emojiSequence ?? ""
+            genmojiData = card.genmojiData
         case .zodiac:
             zodiacSign = card.zodiacSign ?? Zodiac.aries.rawValue
             zodiacCaption = card.text
+        case .nameTag:
+            nameTagPhoto = card.photoData
+            nameTagName = card.nameTagName ?? ""
         case .stadium, .lounge, .dailyGrind, .genZ:
             // Land on the exact card in the exact pack, not just the pack.
             if let deckIndex = visibleDecks.firstIndex(where: { $0.name == card.pack }) {
@@ -939,7 +971,7 @@ struct PeerPickerSheet: View {
                         .foregroundStyle(.secondary)
                     Text("No one nearby yet.")
                         .font(WinkFont.body(15))
-                    Text("WINK finds people on the same Wi-Fi or within Bluetooth range. Keep this open — it keeps looking.")
+                    Text("WINK finds people on the same Wi Fi or within Bluetooth range. Keep this open and it keeps looking.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -957,7 +989,7 @@ struct PeerPickerSheet: View {
                                 .font(WinkFont.body(17))
                                 .foregroundStyle(.primary)
                             if locked(peer) {
-                                Text("One shot — waiting on a wink back")
+                                Text("One shot. Waiting on a wink back")
                                     .font(WinkFont.label(11))
                                     .foregroundStyle(.secondary)
                             }

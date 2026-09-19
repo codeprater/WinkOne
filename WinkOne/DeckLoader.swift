@@ -13,7 +13,8 @@ enum DeckLoader {
         Atmosphere(name: "Photo", icon: "photo.fill", line: "One picture, no metadata"),
         Atmosphere(name: "Mood", icon: "circle.fill", line: "One color, one word"),
         Atmosphere(name: "Emoji", icon: "face.smiling.inverse", line: "Up to three, nothing else"),
-        Atmosphere(name: "Zodiac", icon: "sparkles", line: "All twelve signs")
+        Atmosphere(name: "Zodiac", icon: "sparkles", line: "All twelve signs"),
+        Atmosphere(name: "Name Tag", icon: "person.text.rectangle", line: "Your face, your name")
     ]
 
     /// Built once. `WinkMessage.id` is a stored UUID now, so rebuilding the
@@ -99,9 +100,9 @@ enum DeckLoader {
         "YURR!",
         "ONNAT!",
         "BRO!",
-        "CRASH-OUT!",
+        "CRASH OUT!",
         "SUIIIIIII!!!",
-        "LOCK-IN!",
+        "LOCK IN!",
         "WHAT UP DOE?",
         "W'S IN THE CHAT!"
     ], pack: "Calls", atmosphere: "Gen-Z", ink: .volt)

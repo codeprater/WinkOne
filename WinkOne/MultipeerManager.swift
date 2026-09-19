@@ -229,7 +229,7 @@ final class MultipeerManager: NSObject, ObservableObject {
     }
 
     private func rebuildSession() {
-        stop()
+        stop()          // retires the browser and clears it
         retire(session)
         retire(serviceAdvertiser)
         retire(serviceBrowser)
@@ -285,6 +285,11 @@ final class MultipeerManager: NSObject, ObservableObject {
 
     private func start() {
         serviceAdvertiser?.startAdvertisingPeer()
+        if serviceBrowser == nil, let peerId = myPeerId {
+            let browser = MCNearbyServiceBrowser(peer: peerId, serviceType: serviceType)
+            browser.delegate = self
+            serviceBrowser = browser
+        }
         serviceBrowser?.startBrowsingForPeers()
         startRediscovery()
     }
@@ -304,25 +309,40 @@ final class MultipeerManager: NSObject, ObservableObject {
         cycleBrowser(restartAdvertiser: true)
     }
 
-    /// The only place a live browser is stopped and started. Serialized, so a
-    /// wake and a rediscovery sweep queue up instead of overlapping.
+    /// Refreshes discovery by building a *new* browser and retiring the old
+    /// one. It never stops and restarts a live browser.
+    ///
+    /// Retiring the object was not enough on its own: `stopBrowsingForPeers()`
+    /// followed later by `startBrowsingForPeers()` on the same instance is
+    /// itself the call that trips `_BrowserCancel`, because MC reuses the
+    /// underlying CFNetServiceBrowser and its run loop source across the
+    /// restart. A fresh instance gets a fresh source, and the old one is only
+    /// ever stopped once, on its way out.
     private func cycleBrowser(restartAdvertiser: Bool = false) {
         cycleTask?.cancel()
         cycleTask = Task { @MainActor [weak self] in
-            guard let self, self.isDiscoverable else { return }
-            self.serviceBrowser?.stopBrowsingForPeers()
-            if restartAdvertiser { self.serviceAdvertiser?.stopAdvertisingPeer() }
+            guard let self, self.isDiscoverable, let peerId = self.myPeerId else { return }
 
-            // Long enough for MC to finish its own teardown before we ask it
-            // to stand back up.
-            try? await Task.sleep(for: .milliseconds(600))
+            self.retire(self.serviceBrowser)
+            self.serviceBrowser = nil
+
+            // Let MC finish with the old one before its replacement starts
+            // advertising interest in the same service type.
+            try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled, self.isDiscoverable else { return }
 
-            if restartAdvertiser { self.serviceAdvertiser?.startAdvertisingPeer() }
-            self.serviceBrowser?.startBrowsingForPeers()
+            let browser = MCNearbyServiceBrowser(peer: peerId, serviceType: self.serviceType)
+            browser.delegate = self
+            self.serviceBrowser = browser
+            browser.startBrowsingForPeers()
+
+            if restartAdvertiser { self.restartAdvertising() }
         }
     }
 
+    /// Going off the air. The browser is retired rather than stopped in place,
+    /// for the same reason `cycleBrowser` builds a new one: a browser that has
+    /// been stopped is never started again.
     private func stop() {
         rediscoveryTask?.cancel()
         rediscoveryTask = nil
@@ -331,7 +351,8 @@ final class MultipeerManager: NSObject, ObservableObject {
         advertiseTask?.cancel()
         advertiseTask = nil
         serviceAdvertiser?.stopAdvertisingPeer()
-        serviceBrowser?.stopBrowsingForPeers()
+        retire(serviceBrowser)
+        serviceBrowser = nil
         availablePeers.removeAll()
     }
 

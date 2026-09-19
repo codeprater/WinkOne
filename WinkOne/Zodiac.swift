@@ -48,18 +48,18 @@ enum Zodiac: String, CaseIterable, Identifiable, Codable, Hashable {
 
     var dates: String {
         switch self {
-        case .aries: "Mar 21 – Apr 19"
-        case .taurus: "Apr 20 – May 20"
-        case .gemini: "May 21 – Jun 20"
-        case .cancer: "Jun 21 – Jul 22"
-        case .leo: "Jul 23 – Aug 22"
-        case .virgo: "Aug 23 – Sep 22"
-        case .libra: "Sep 23 – Oct 22"
-        case .scorpio: "Oct 23 – Nov 21"
-        case .sagittarius: "Nov 22 – Dec 21"
-        case .capricorn: "Dec 22 – Jan 19"
-        case .aquarius: "Jan 20 – Feb 18"
-        case .pisces: "Feb 19 – Mar 20"
+        case .aries: "Mar 21 to Apr 19"
+        case .taurus: "Apr 20 to May 20"
+        case .gemini: "May 21 to Jun 20"
+        case .cancer: "Jun 21 to Jul 22"
+        case .leo: "Jul 23 to Aug 22"
+        case .virgo: "Aug 23 to Sep 22"
+        case .libra: "Sep 23 to Oct 22"
+        case .scorpio: "Oct 23 to Nov 21"
+        case .sagittarius: "Nov 22 to Dec 21"
+        case .capricorn: "Dec 22 to Jan 19"
+        case .aquarius: "Jan 20 to Feb 18"
+        case .pisces: "Feb 19 to Mar 20"
         }
     }
 
@@ -154,12 +154,19 @@ struct ZodiacStudio: View {
                     .foregroundStyle(.white)
                     .tint(selected.accent)
                     .padding(.horizontal, 30)
+                    .winkWritingTools()
                     .onChange(of: caption) { _, newValue in
                         if newValue.count > WinkLimits.zodiacCaption {
                             caption = String(newValue.prefix(WinkLimits.zodiacCaption))
                         }
                     }
                     .accessibilityLabel("Caption for your zodiac wink")
+
+                SuggestLinesRow(
+                    composerName: "Zodiac",
+                    seed: selected.rawValue,
+                    target: $caption
+                )
 
                 LazyVGrid(columns: columns, spacing: 10) {
                     ForEach(Zodiac.allCases) { item in

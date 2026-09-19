@@ -32,6 +32,12 @@ struct WinkMessage: Identifiable, Hashable, Codable {
     var emojiSequence: String?
     var zodiacSign: String?
 
+    /// The name printed on a Name Tag card. The photo rides in `photoData`.
+    var nameTagName: String?
+
+    /// A Genmoji, as the image data the keyboard handed us.
+    var genmojiData: Data?
+
     /// Secret Wink modifier — the receiving card is veiled until tapped.
     var secretUntilTapped: Bool
 
@@ -55,6 +61,8 @@ struct WinkMessage: Identifiable, Hashable, Codable {
         moodWord: String? = nil,
         emojiSequence: String? = nil,
         zodiacSign: String? = nil,
+        nameTagName: String? = nil,
+        genmojiData: Data? = nil,
         secretUntilTapped: Bool = false
     ) {
         self.id = id
@@ -76,6 +84,8 @@ struct WinkMessage: Identifiable, Hashable, Codable {
         self.moodWord = moodWord
         self.emojiSequence = emojiSequence
         self.zodiacSign = zodiacSign
+        self.nameTagName = nameTagName
+        self.genmojiData = genmojiData
         self.secretUntilTapped = secretUntilTapped
     }
 
@@ -164,6 +174,8 @@ struct WinkPayload: Codable, Equatable {
     var moodWord: String?
     var emojiSequence: String?
     var zodiacSign: String?
+    var nameTagName: String?
+    var genmojiData: Data?
     var secretUntilTapped: Bool
 
     init(
@@ -188,6 +200,8 @@ struct WinkPayload: Codable, Equatable {
         moodWord: String? = nil,
         emojiSequence: String? = nil,
         zodiacSign: String? = nil,
+        nameTagName: String? = nil,
+        genmojiData: Data? = nil,
         secretUntilTapped: Bool = false
     ) {
         self.v = v
@@ -211,6 +225,8 @@ struct WinkPayload: Codable, Equatable {
         self.moodWord = moodWord
         self.emojiSequence = emojiSequence
         self.zodiacSign = zodiacSign
+        self.nameTagName = nameTagName
+        self.genmojiData = genmojiData
         self.secretUntilTapped = secretUntilTapped
     }
 
@@ -218,7 +234,8 @@ struct WinkPayload: Codable, Equatable {
         case v, text, pack, atmosphere, ink, fromName, kind
         case symbolName, drawingData, latitude, longitude, placeName
         case voiceData, voiceDuration, photoData, photoCaption, photoSymbolName
-        case moodColorHex, moodWord, emojiSequence, zodiacSign, secretUntilTapped
+        case moodColorHex, moodWord, emojiSequence, zodiacSign, nameTagName
+        case genmojiData, secretUntilTapped
     }
 
     init(from decoder: Decoder) throws {
@@ -245,6 +262,8 @@ struct WinkPayload: Codable, Equatable {
         moodWord = try c.decodeIfPresent(String.self, forKey: .moodWord)
         emojiSequence = try c.decodeIfPresent(String.self, forKey: .emojiSequence)
         zodiacSign = try c.decodeIfPresent(String.self, forKey: .zodiacSign)
+        nameTagName = try c.decodeIfPresent(String.self, forKey: .nameTagName)
+        genmojiData = try c.decodeIfPresent(Data.self, forKey: .genmojiData)
         secretUntilTapped = try c.decodeIfPresent(Bool.self, forKey: .secretUntilTapped) ?? false
     }
 
@@ -271,6 +290,8 @@ struct WinkPayload: Codable, Equatable {
             moodWord: moodWord,
             emojiSequence: emojiSequence,
             zodiacSign: zodiacSign,
+            nameTagName: nameTagName,
+            genmojiData: genmojiData,
             secretUntilTapped: secretUntilTapped
         )
     }

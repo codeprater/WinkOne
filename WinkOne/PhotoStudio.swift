@@ -1,5 +1,8 @@
 import PhotosUI
 import SwiftUI
+#if canImport(ImagePlayground)
+import ImagePlayground
+#endif
 import UIKit
 
 // MARK: - Processing
@@ -119,6 +122,7 @@ struct PhotoStudio: View {
     var placeName: String?
     var onReject: (String) -> Void
 
+    @State private var showPlayground = false
     @State private var showLibrary = false
     @State private var showCamera = false
     @State private var showSymbolPicker = false
@@ -149,6 +153,9 @@ struct PhotoStudio: View {
                     overlaySymbol == nil ? "face.smiling" : "checkmark.seal.fill",
                     overlaySymbol == nil ? "Symbol" : "Change"
                 ) { showSymbolPicker.toggle() }
+                if WinkAI.makesImages {
+                    sourceButton("apple.intelligence", "Imagine") { showPlayground = true }
+                }
                 if photoData != nil {
                     sourceButton("trash", "Clear") {
                         photoData = nil
@@ -163,12 +170,15 @@ struct PhotoStudio: View {
                 .foregroundStyle(.white)
                 .tint(WinkColor.volt)
                 .padding(.horizontal, 36)
+                .winkWritingTools()
                 .onChange(of: caption) { _, newValue in
                     if newValue.count > WinkLimits.photoCaption {
                         caption = String(newValue.prefix(WinkLimits.photoCaption))
                     }
                 }
                 .accessibilityLabel("Caption for your photo")
+
+            SuggestLinesRow(composerName: "Photo", target: $caption)
 
             if showSymbolPicker {
                 symbolStrip
@@ -184,12 +194,21 @@ struct PhotoStudio: View {
             }
             }
         }
+        .modifier(PlaygroundSheet(isPresented: $showPlayground, concept: caption, onImage: acceptURL))
         .sheet(isPresented: $showLibrary) {
             PhotoLibraryPicker(onPick: accept)
         }
         .sheet(isPresented: $showCamera) {
             CameraPicker(onPick: accept)
         }
+    }
+
+    private func acceptURL(_ url: URL) {
+        guard let data = try? Data(contentsOf: url), let image = UIImage(data: data) else {
+            onReject("That image could not be read.")
+            return
+        }
+        accept(image)
     }
 
     private func accept(_ image: UIImage) {
@@ -255,5 +274,32 @@ struct PhotoStudio: View {
             }
             .frame(height: 52)
         }
+    }
+}
+
+
+/// Image Playground only exists on iOS 18.4 and up, and only runs on Apple
+/// Intelligence hardware. Wrapping it in a modifier keeps the availability
+/// check out of the studio's body.
+private struct PlaygroundSheet: ViewModifier {
+    @Binding var isPresented: Bool
+    var concept: String
+    var onImage: (URL) -> Void
+
+    func body(content: Content) -> some View {
+        #if canImport(ImagePlayground)
+        if #available(iOS 18.4, *) {
+            content.imagePlaygroundSheet(
+                isPresented: $isPresented,
+                concept: concept.isEmpty ? "a friendly greeting card" : concept
+            ) { url in
+                onImage(url)
+            }
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
     }
 }

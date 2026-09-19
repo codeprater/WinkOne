@@ -32,11 +32,11 @@ enum WinkAgreement {
     ]
 
     static let text = """
-    WINK — END USER LICENSE AGREEMENT & CONTENT POLICY
+    WINK END USER LICENSE AGREEMENT AND CONTENT POLICY
 
     Last updated: September 2026
 
-    1. ELIGIBILITY — 18+
+    1. ELIGIBILITY. 18+
     WINK is rated 18+. You must be at least \(minimumAge) years old to use this app. \
     By continuing you confirm that you are \(minimumAge) or older. If you are not, \
     do not use WINK.
@@ -51,9 +51,9 @@ enum WinkAgreement {
     place names, and the display name you choose.
 
     3. AUTOMATIC FILTERING
-    WINK automatically screens every card — text, captions, links, and display \
-    names — before it is sent and again before it is shown to you. Content that \
-    matches our objectionable-content filter is blocked and never delivered. \
+    WINK automatically screens every card, including text, captions, links and display \
+    names, before it is sent and again before it is shown to you. Content that \
+    matches our objectionable content filter is blocked and never delivered. \
     Attempting to defeat the filter is itself a violation of these terms.
 
     4. REPORTING
@@ -61,7 +61,7 @@ enum WinkAgreement {
     Center. Reporting a user immediately removes their content from your device \
     and blocks them from contacting you again.
 
-    5. OUR COMMITMENT — \(responseWindowHours) HOURS
+    5. OUR COMMITMENT. \(responseWindowHours) HOURS
     We act on every report of objectionable content within \(responseWindowHours) \
     hours. Acting means removing the offending content and ejecting the user who \
     provided it. Accounts and devices found to be sending objectionable content \
@@ -73,7 +73,7 @@ enum WinkAgreement {
     deliver content to you. Removal is immediate and permanent on your device.
 
     7. HOW WINK WORKS
-    WINK sends cards directly between nearby devices over an encrypted peer-to-peer \
+    WINK sends cards directly between nearby devices over an encrypted peer to peer \
     connection, or through the share sheet using apps you already have. WINK does \
     not host a public feed and does not upload your cards to a server.
 
@@ -195,6 +195,12 @@ enum ContentFilter {
         }
         if let word = message.moodWord {
             let verdict = check(text: word)
+            if verdict.isBlocked { return verdict }
+        }
+        // A name tag is a display name by another route, so it gets the
+        // stricter name check rather than the ordinary text one.
+        if let tag = message.nameTagName {
+            let verdict = check(name: tag)
             if verdict.isBlocked { return verdict }
         }
         return .allowed

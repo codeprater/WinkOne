@@ -101,7 +101,7 @@ struct AgreementGateView: View {
                         .foregroundStyle(.white.opacity(0.5))
                         .frame(maxWidth: .infinity)
 
-                    Text("Report content or abuse: \(WinkAgreement.supportEmail) — answered within \(WinkAgreement.responseWindowHours) hours.")
+                    Text("Report content or abuse: \(WinkAgreement.supportEmail). Answered within \(WinkAgreement.responseWindowHours) hours.")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(0.45))
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -160,7 +160,7 @@ struct SafetyCenterView: View {
                             .foregroundStyle(.red)
                     }
                     Button {
-                        SupportMail.open(subject: "WINK — Help request")
+                        SupportMail.open(subject: "WINK Help request")
                     } label: {
                         Label("Contact the developer", systemImage: "envelope.fill")
                     }
@@ -252,7 +252,7 @@ struct SafetyCenterView: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(report.reason)
                                     .font(.system(size: 15, weight: .semibold))
-                                Text("\(report.reportedName) — \(report.date, style: .date)")
+                                Text("\(report.reportedName), \(report.date, style: .date)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -263,7 +263,7 @@ struct SafetyCenterView: View {
                 Section {
                     Button("Terms & content policy") { showTerms = true }
                 } footer: {
-                    Text("WINK — \(WinkAgreement.supportEmail)")
+                    Text("WINK \(WinkAgreement.supportEmail)")
                 }
             }
             .navigationTitle("Safety Center")
@@ -369,7 +369,7 @@ struct ReportSheet: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                 } footer: {
-                    Text("Submitting immediately removes this content from your device and blocks the sender. We review every report and act within \(WinkAgreement.responseWindowHours) hours — removing the content and ejecting the user who sent it. Reports go to \(WinkAgreement.supportEmail).")
+                    Text("Submitting immediately removes this content from your device and blocks the sender. We review every report and act within \(WinkAgreement.responseWindowHours) hours, removing the content and ejecting the user who sent it. Reports go to \(WinkAgreement.supportEmail).")
                 }
             }
             .navigationTitle("Report")
@@ -454,6 +454,6 @@ enum SupportMail {
         Content:
         \(report.evidence.isEmpty ? "(none)" : report.evidence)
         """
-        open(subject: "WINK report — \(report.reason)", body: body)
+        open(subject: "WINK report: \(report.reason)", body: body)
     }
 }

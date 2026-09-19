@@ -21,8 +21,25 @@ enum Composer: String, CaseIterable, Identifiable, Hashable {
     case mood        = "Mood"
     case emoji       = "Emoji"
     case zodiac      = "Zodiac"
+    case nameTag     = "Name Tag"
 
     var id: String { rawValue }
+
+    /// What a person sees. Kept apart from `rawValue` because that string is
+    /// the wire format: renaming it would stop cards styling correctly on a
+    /// phone still running the App Store build.
+    var displayName: String {
+        switch self {
+        case .genZ: "Gen Z"
+        default: rawValue
+        }
+    }
+
+    /// Turns a stored atmosphere string into something fit to show. Anything
+    /// unrecognised is passed through unchanged.
+    static func display(_ atmosphere: String) -> String {
+        Composer(rawValue: atmosphere)?.displayName ?? atmosphere
+    }
 
     /// The atmosphere string stored on cards and advertised to peers.
     var atmosphere: String { rawValue }
@@ -53,6 +70,7 @@ enum Composer: String, CaseIterable, Identifiable, Hashable {
         case .mood: .volt
         case .emoji: .kraft
         case .zodiac: .ink
+        case .nameTag: .gold
         case .stadium, .lounge, .dailyGrind, .genZ: .gold
         }
     }
@@ -71,6 +89,7 @@ enum Composer: String, CaseIterable, Identifiable, Hashable {
         case .mood: "circle.fill"
         case .emoji: "face.smiling.inverse"
         case .zodiac: "sparkles"
+        case .nameTag: "person.text.rectangle"
         }
     }
 
@@ -88,6 +107,7 @@ enum Composer: String, CaseIterable, Identifiable, Hashable {
         case .mood: "One color, one word"
         case .emoji: "Up to three, nothing else"
         case .zodiac: "All twelve signs"
+        case .nameTag: "Your face, your name"
         }
     }
 }
@@ -120,6 +140,7 @@ enum WinkLimits {
     nonisolated static let photoCaption = 60
     nonisolated static let moodWord = 24
     nonisolated static let zodiacCaption = 44
+    nonisolated static let nameTagName = 28
     nonisolated static let maxEmoji = 3
 }
 

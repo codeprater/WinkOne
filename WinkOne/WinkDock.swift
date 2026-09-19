@@ -170,7 +170,7 @@ struct WinkDock: View {
                         VStack(spacing: 5) {
                             Image(systemName: item.icon)
                                 .font(.system(size: 17, weight: .semibold))
-                            Text(item.rawValue.uppercased())
+                            Text(item.displayName.uppercased())
                                 .font(WinkFont.label(9))
                                 .tracking(0.7)
                                 .lineLimit(1)
@@ -183,7 +183,7 @@ struct WinkDock: View {
                                 .fill(selected ? WinkColor.volt : Color.white.opacity(0.06))
                         )
                     }
-                    .accessibilityLabel(item.rawValue)
+                    .accessibilityLabel(item.displayName)
                     .accessibilityValue(item.line)
                     .accessibilityAddTraits(selected ? [.isSelected] : [])
                 }

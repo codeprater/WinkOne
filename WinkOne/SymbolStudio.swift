@@ -35,11 +35,14 @@ struct SymbolStudio: View {
                 .foregroundStyle(.white)
                 .tint(WinkColor.volt)
                 .padding(.horizontal, 36)
+                .winkWritingTools()
                 .onChange(of: caption) { _, newValue in
                     if newValue.count > 40 {
                         caption = String(newValue.prefix(40))
                     }
                 }
+
+            SuggestLinesRow(composerName: "Symbol", seed: selectedName, target: $caption)
 
             TextField("Search symbols", text: $query)
                 .font(.system(size: 14, weight: .medium, design: .rounded))

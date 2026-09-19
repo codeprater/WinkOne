@@ -32,6 +32,7 @@ struct MoodStudio: View {
                 .foregroundStyle(.white)
                 .tint(WinkColor.volt)
                 .textInputAutocapitalization(.characters)
+                .winkWritingTools(full: false)
                 .padding(.horizontal, 36)
                 .onChange(of: word) { _, newValue in
                     // One word means one word — collapse anything past the first.

@@ -30,8 +30,15 @@ struct StudioLayout<Card: View, Controls: View>: View {
 
     @Environment(\.winkCardHeight) private var cardHeight
 
+    /// The controls get a ceiling and scroll inside it. Without one the
+    /// ScrollView takes every spare point, the spacers collapse, and the card
+    /// sits wherever it lands instead of in the middle.
+    private let controlsCeiling: CGFloat = 250
+
     var body: some View {
         VStack(spacing: 12) {
+            Spacer(minLength: 0)
+
             card()
                 .frame(height: cardHeight)
                 .padding(.horizontal, 44)
@@ -39,11 +46,14 @@ struct StudioLayout<Card: View, Controls: View>: View {
             ScrollView(.vertical, showsIndicators: false) {
                 controls()
                     .padding(.top, 2)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 8)
             }
+            .frame(maxHeight: controlsCeiling)
             .scrollBounceBehavior(.basedOnSize)
+
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
     }
 }

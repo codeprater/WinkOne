@@ -82,7 +82,7 @@ struct OnboardingView: View {
             }
             .padding(.top, 4)
 
-            Text("We act on reports within \(WinkAgreement.responseWindowHours) hours — content removed, sender ejected. Reach us at \(WinkAgreement.supportEmail).")
+            Text("We act on reports within \(WinkAgreement.responseWindowHours) hours. Content removed, sender ejected. Reach us at \(WinkAgreement.supportEmail).")
                 .font(.system(size: 14, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
@@ -114,7 +114,7 @@ struct OnboardingView: View {
             Text("Real Life. Unmuted.")
                 .font(.system(size: 34, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
-            Text("Send a card to someone in the room — or anywhere your share sheet can reach.")
+            Text("Send a card to someone in the room, or anywhere your share sheet can reach.")
                 .font(.system(size: 17, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.62))
             Spacer()

@@ -13,10 +13,14 @@ import UIKit
 // thread every time a single wink arrived — which is exactly the CPU, energy
 // and memory spike. History belongs in a file.
 
+// The project builds with SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor, so every
+// declaration here is MainActor unless it says otherwise. Nothing in this type
+// touches UI, and `write` is called from a background task, so the whole thing
+// is nonisolated.
 enum WinkHistoryFile {
     /// Application Support, not Documents: this is app state, not user data,
     /// and it should not show up in the Files app.
-    private static var directory: URL? {
+    nonisolated private static var directory: URL? {
         guard let base = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -31,11 +35,11 @@ enum WinkHistoryFile {
         return folder
     }
 
-    static func url(_ name: String) -> URL? {
+    nonisolated static func url(_ name: String) -> URL? {
         directory?.appendingPathComponent(name)
     }
 
-    static func read(_ name: String) -> Data? {
+    nonisolated static func read(_ name: String) -> Data? {
         guard let url = url(name) else { return nil }
         return try? Data(contentsOf: url)
     }

@@ -72,7 +72,7 @@ struct WinkSettingsView: View {
                 } header: {
                     Text("This Device")
                 } footer: {
-                    Text("Nothing here leaves your phone. Cards travel straight to the other device over Nearby — there is no account and no server.")
+                    Text("Nothing here leaves your phone. Cards travel straight to the other device over Nearby. There is no account and no server.")
                 }
             }
             .scrollContentBackground(.hidden)

@@ -31,7 +31,8 @@ struct LibraryItem: Identifiable, Equatable {
     /// Everything search looks at. Deliberately not the payload bytes.
     var searchText: String {
         [message.text, message.pack, message.atmosphere, title,
-         message.moodWord ?? "", message.emojiSequence ?? "", message.zodiacSign ?? ""]
+         message.moodWord ?? "", message.emojiSequence ?? "",
+         message.zodiacSign ?? "", message.nameTagName ?? ""]
             .joined(separator: " ")
             .lowercased()
     }
@@ -155,7 +156,7 @@ struct WinkLibrary: View {
         return DeckLoader.atmospheres
             .compactMap { atmosphere in
                 guard let bucket = buckets[atmosphere.name], !bucket.isEmpty else { return nil }
-                return (atmosphere.name, bucket)
+                return (Composer.display(atmosphere.name), bucket)
             }
     }
 
@@ -405,7 +406,7 @@ struct WinkLibrary: View {
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.8))
                 .lineLimit(1)
-            Text(item.subtitle)
+            Text(Composer.display(item.subtitle))
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.4))
                 .lineLimit(1)
@@ -514,7 +515,7 @@ struct LibraryPreview: View {
                 WinkCardView(message: item.message, fromName: fromName)
                     .padding(.horizontal, 34)
 
-                Text(item.subtitle)
+                Text(Composer.display(item.subtitle))
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.4))
 

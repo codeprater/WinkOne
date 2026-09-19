@@ -31,11 +31,13 @@ struct WinkCardView: View {
 
     var body: some View {
         Group {
-            if let sign = Zodiac.named(message.zodiacSign) {
+            if message.nameTagName != nil {
+                nameTagInvite
+            } else if let sign = Zodiac.named(message.zodiacSign) {
                 zodiacInvite(sign)
             } else if message.moodColorHex != nil {
                 moodInvite
-            } else if message.emojiSequence != nil {
+            } else if message.emojiSequence != nil || message.genmojiData != nil {
                 emojiInvite
             } else if message.photoData != nil {
                 photoInvite
@@ -288,9 +290,20 @@ struct WinkCardView: View {
                 InviteBackdrop(ink: message.ink)
 
                 VStack(spacing: 0) {
-                    cardHeader(right: "EMOJI")
+                    cardHeader(right: message.genmojiData == nil ? "EMOJI" : "GENMOJI")
                     Spacer()
-                    emojiCluster(emoji, scale: scale)
+                    if let data = message.genmojiData,
+                       let image = DecodedImageCache.shared.image(
+                           for: data,
+                           maxPixel: geo.size.width
+                       ) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 200 * scale, height: 200 * scale)
+                    } else {
+                        emojiCluster(emoji, scale: scale)
+                    }
                     Spacer()
                     cardFooter(extra: nil)
                 }
@@ -321,6 +334,110 @@ struct WinkCardView: View {
                 .font(.system(size: 90 * scale))
                 .foregroundStyle(message.ink.type.opacity(0.4))
         }
+    }
+
+    // MARK: - Name Tag
+
+    /// A badge you can hand someone across a room. Photo up top, the line
+    /// underneath, the wordmark twice: dark in the top right where the card is
+    /// yellow, and again in volt at the foot where it has gone to graphite.
+    private var nameTagInvite: some View {
+        GeometryReader { geo in
+            let scale = geo.size.width / InviteCard.renderWidth
+            let name = (message.nameTagName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let photoSide = geo.size.width * 0.62
+
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color(winkHex: "F7E90F"),
+                        Color(winkHex: "FBF0B4"),
+                        Color(winkHex: "F3E9D2"),
+                        Color(winkHex: "8C8A84"),
+                        Color(winkHex: "242426")
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                VStack(spacing: 0) {
+                    HStack {
+                        Spacer(minLength: 0)
+                        Text("WINK")
+                            .font(WinkFont.brand(13))
+                            .tracking(2.6)
+                            .foregroundStyle(Color(winkHex: "1A1A1C"))
+                            .fixedSize()
+                    }
+                    .padding(.horizontal, 22)
+                    .padding(.top, 18)
+
+                    Spacer(minLength: 0)
+
+                    photo(side: photoSide, scale: scale)
+
+                    Text("My name is")
+                        .font(.system(size: 15 * scale, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color(winkHex: "3A3A38"))
+                        .padding(.top, 18 * scale)
+
+                    Text(name.isEmpty ? "..." : name)
+                        .font(WinkFont.shout(geo.size.width * 0.13))
+                        .foregroundStyle(Color(winkHex: "1A1A1C"))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.45)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 2)
+
+                    Spacer(minLength: 0)
+
+                    VStack(spacing: 4) {
+                        if let place = message.placeName, !place.isEmpty {
+                            Text(place)
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color(winkHex: "CFCFC9"))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        Text("WINK")
+                            .font(WinkFont.brand(17))
+                            .tracking(3.4)
+                            .foregroundStyle(WinkColor.volt)
+                            .fixedSize()
+                    }
+                    .padding(.bottom, 18)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(name.isEmpty ? "Name tag" : "Name tag. My name is \(name)")
+        }
+    }
+
+    @ViewBuilder
+    private func photo(side: CGFloat, scale: CGFloat) -> some View {
+        Group {
+            if let data = message.photoData,
+               let image = DecodedImageCache.shared.image(for: data, maxPixel: side * 3) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    Color(winkHex: "E8DFC6")
+                    Image(systemName: "person.fill")
+                        .font(.system(size: side * 0.45, weight: .light))
+                        .foregroundStyle(Color(winkHex: "9A937C"))
+                }
+            }
+        }
+        .frame(width: side, height: side)
+        .clipShape(RoundedRectangle(cornerRadius: 22 * scale, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22 * scale, style: .continuous)
+                .stroke(Color.white.opacity(0.75), lineWidth: 3 * scale)
+        }
+        .shadow(color: .black.opacity(0.28), radius: 16 * scale, y: 8 * scale)
     }
 
     // MARK: - Zodiac
