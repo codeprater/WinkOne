@@ -437,6 +437,12 @@ struct ContentView: View {
                     .font(WinkFont.brand(34))
                     .tracking(4)
                     .foregroundStyle(WinkColor.volt)
+                    // Futura-Bold at 34 with 4pt tracking overruns the space the
+                    // icons leave on a Pro Max, and SwiftUI was breaking it to
+                    // "WIN / K". One line, shrink if it has to.
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .minimumScaleFactor(0.6)
                 Button {
                     showNameSetup = true
                 } label: {
