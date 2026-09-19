@@ -28,6 +28,21 @@ final class MultipeerManager: NSObject, ObservableObject {
     private var timeoutTasks: [MCPeerID: Task<Void, Never>] = [:]
     private var rediscoveryTask: Task<Void, Never>?
 
+    /// Objects that have been stopped but not yet let go of. See `retire`.
+    private var retiring: [AnyObject] = []
+
+    /// One task owns every browser stop/start. Two of them interleaving is
+    /// what tore the Bonjour browser down underneath itself.
+    private var cycleTask: Task<Void, Never>?
+
+    /// Debounces `restartAdvertising`. Tapping along the composer strip used to
+    /// build and destroy an advertiser per tap.
+    private var advertiseTask: Task<Void, Never>?
+
+    /// When the session was last built, so a scene-phase wake arriving on the
+    /// heels of `bootstrap` does not kick a browser that just started.
+    private var lastRebuild = Date.distantPast
+
     @Published var availablePeers: [WinkPeer] = []
 
     /// Cards wait their turn instead of overwriting each other. Before this a
@@ -69,7 +84,14 @@ final class MultipeerManager: NSObject, ObservableObject {
     func setAtmosphere(_ name: String) {
         guard atmosphere != name else { return }
         atmosphere = name
-        restartAdvertising()
+        // Wait for them to settle on a composer before re-advertising. Twelve
+        // taps along the strip is twelve advertisers otherwise.
+        advertiseTask?.cancel()
+        advertiseTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(1200))
+            guard let self, !Task.isCancelled else { return }
+            self.restartAdvertising()
+        }
     }
 
     func toggleGhostMode() {
@@ -167,12 +189,54 @@ final class MultipeerManager: NSObject, ObservableObject {
         queue.removeAll()
     }
 
+    // MARK: - Teardown
+    //
+    // MultipeerConnectivity tears its Bonjour advertiser and browser down
+    // asynchronously: stopping one schedules the cancel onto the run loop.
+    // Releasing the object before that work runs leaves the callback pointing
+    // at freed memory, and CoreFoundation traps:
+    //
+    //     _CFAssertMismatchedTypeID
+    //     CFRunLoopSourceInvalidate
+    //     _BrowserCancel(__CFNetServiceBrowser*)
+    //     EXC_BREAKPOINT (SIGTRAP)
+    //
+    // That is the crash. The old code set `serviceBrowser = nil` on the line
+    // after `stopBrowsingForPeers()`, which is exactly the race. So: detach the
+    // delegate first (no callbacks into a half-dead manager), stop it, then
+    // hold the object alive for a few seconds while MC finishes with it.
+
+    private func retire(_ object: AnyObject?) {
+        guard let object else { return }
+        if let advertiser = object as? MCNearbyServiceAdvertiser {
+            advertiser.delegate = nil
+            advertiser.stopAdvertisingPeer()
+        } else if let browser = object as? MCNearbyServiceBrowser {
+            browser.delegate = nil
+            browser.stopBrowsingForPeers()
+        } else if let session = object as? MCSession {
+            session.delegate = nil
+            session.disconnect()
+        }
+        retiring.append(object)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self else { return }
+            if let index = self.retiring.firstIndex(where: { $0 === object }) {
+                self.retiring.remove(at: index)
+            }
+        }
+    }
+
     private func rebuildSession() {
         stop()
-        session?.disconnect()
+        retire(session)
+        retire(serviceAdvertiser)
+        retire(serviceBrowser)
         session = nil
         serviceAdvertiser = nil
         serviceBrowser = nil
+        lastRebuild = Date()
 
         let peerId = MCPeerID(displayName: winkName)
         myPeerId = peerId
@@ -201,7 +265,11 @@ final class MultipeerManager: NSObject, ObservableObject {
     }
 
     private func restartAdvertising() {
-        serviceAdvertiser?.stopAdvertisingPeer()
+        // A new discoveryInfo needs a new advertiser; the old one is retired,
+        // not dropped. This runs on every composer change, so it was the most
+        // frequently hit version of the crash.
+        retire(serviceAdvertiser)
+        serviceAdvertiser = nil
         guard let peerId = myPeerId else { return }
         let advertiser = MCNearbyServiceAdvertiser(
             peer: peerId,
@@ -227,22 +295,41 @@ final class MultipeerManager: NSObject, ObservableObject {
     /// This is the single biggest cause of "it can't see anyone".
     func wake() {
         guard isDiscoverable else { return }
-        serviceBrowser?.stopBrowsingForPeers()
-        serviceAdvertiser?.stopAdvertisingPeer()
+        // On a cold launch `bootstrap` has just built and started everything,
+        // and the scene going active arrives milliseconds later. Kicking the
+        // browser again here is what made the crash reproducible on launch.
+        guard Date().timeIntervalSince(lastRebuild) > 3 else { return }
         // Peers found before the app slept may no longer be here.
         availablePeers.removeAll()
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(250))
+        cycleBrowser(restartAdvertiser: true)
+    }
+
+    /// The only place a live browser is stopped and started. Serialized, so a
+    /// wake and a rediscovery sweep queue up instead of overlapping.
+    private func cycleBrowser(restartAdvertiser: Bool = false) {
+        cycleTask?.cancel()
+        cycleTask = Task { @MainActor [weak self] in
             guard let self, self.isDiscoverable else { return }
-            self.serviceAdvertiser?.startAdvertisingPeer()
+            self.serviceBrowser?.stopBrowsingForPeers()
+            if restartAdvertiser { self.serviceAdvertiser?.stopAdvertisingPeer() }
+
+            // Long enough for MC to finish its own teardown before we ask it
+            // to stand back up.
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled, self.isDiscoverable else { return }
+
+            if restartAdvertiser { self.serviceAdvertiser?.startAdvertisingPeer() }
             self.serviceBrowser?.startBrowsingForPeers()
-            self.startRediscovery()
         }
     }
 
     private func stop() {
         rediscoveryTask?.cancel()
         rediscoveryTask = nil
+        cycleTask?.cancel()
+        cycleTask = nil
+        advertiseTask?.cancel()
+        advertiseTask = nil
         serviceAdvertiser?.stopAdvertisingPeer()
         serviceBrowser?.stopBrowsingForPeers()
         availablePeers.removeAll()
@@ -254,16 +341,14 @@ final class MultipeerManager: NSObject, ObservableObject {
     private func startRediscovery() {
         rediscoveryTask?.cancel()
         rediscoveryTask = Task { @MainActor [weak self] in
-            var interval: Duration = .seconds(8)
             while !Task.isCancelled {
-                try? await Task.sleep(for: interval)
-                // Sweep often while the radar is empty, back off once it is not.
-                interval = (self?.availablePeers.isEmpty ?? true) ? .seconds(8) : .seconds(30)
+                // Sweep sooner while the radar is empty, back off once it is
+                // not. Both intervals are deliberately unhurried: cycling a
+                // Bonjour browser is the most fragile thing this class does.
+                let empty = self?.availablePeers.isEmpty ?? true
+                try? await Task.sleep(for: empty ? .seconds(15) : .seconds(45))
                 guard let self, self.isDiscoverable, !Task.isCancelled else { return }
-                self.serviceBrowser?.stopBrowsingForPeers()
-                try? await Task.sleep(for: .milliseconds(300))
-                guard !Task.isCancelled else { return }
-                self.serviceBrowser?.startBrowsingForPeers()
+                self.cycleBrowser()
             }
         }
     }
