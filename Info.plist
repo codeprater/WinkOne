@@ -8,6 +8,8 @@
 	<string>Finding Winks</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Add a place to your WINK when you want someone to find you.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose a photo for your WINK name tag.</string>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>WINK tells you when someone sends you a card.</string>
 	<key>NSBonjourServices</key>

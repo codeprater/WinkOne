@@ -39,7 +39,7 @@ enum WinkColor {
 }
 
 enum CardInk: String, Codable, Hashable {
-    case volt, ink, gold, field, wine, ember, ice, kraft
+    case volt, ink, gold, field, wine, ember, ice, kraft, coral, lavender, ocean, mint, rose, sky, tangerine, plum
 
     var fill: Color {
         switch self {
@@ -51,13 +51,21 @@ enum CardInk: String, Codable, Hashable {
         case .ember: Color(red: 0.12, green: 0.05, blue: 0.02)
         case .ice: Color(red: 0.04, green: 0.10, blue: 0.12)
         case .kraft: WinkColor.kraft
+        case .coral: Color(red: 0.32, green: 0.07, blue: 0.08)
+        case .lavender: Color(red: 0.17, green: 0.10, blue: 0.28)
+        case .ocean: Color(red: 0.03, green: 0.14, blue: 0.28)
+        case .mint: Color(red: 0.04, green: 0.22, blue: 0.18)
+        case .rose: Color(red: 0.28, green: 0.08, blue: 0.18)
+        case .sky: Color(red: 0.06, green: 0.22, blue: 0.34)
+        case .tangerine: Color(red: 0.32, green: 0.13, blue: 0.02)
+        case .plum: Color(red: 0.22, green: 0.05, blue: 0.24)
         }
     }
 
     var type: Color {
         switch self {
         case .volt: WinkColor.night
-        case .ink, .gold, .field, .wine, .ember, .ice, .kraft: WinkColor.volt
+        case .ink, .gold, .field, .wine, .ember, .ice, .kraft, .coral, .lavender, .ocean, .mint, .rose, .sky, .tangerine, .plum: WinkColor.volt
         }
     }
 
@@ -71,6 +79,14 @@ enum CardInk: String, Codable, Hashable {
         case .ember: WinkColor.ember
         case .ice: WinkColor.ice
         case .kraft: WinkColor.bone
+        case .coral: Color(red: 1.0, green: 0.56, blue: 0.48)
+        case .lavender: Color(red: 0.82, green: 0.68, blue: 1.0)
+        case .ocean: Color(red: 0.45, green: 0.82, blue: 1.0)
+        case .mint: Color(red: 0.42, green: 1.0, blue: 0.72)
+        case .rose: Color(red: 1.0, green: 0.52, blue: 0.72)
+        case .sky: Color(red: 0.48, green: 0.86, blue: 1.0)
+        case .tangerine: Color(red: 1.0, green: 0.72, blue: 0.28)
+        case .plum: Color(red: 0.92, green: 0.52, blue: 1.0)
         }
     }
 }

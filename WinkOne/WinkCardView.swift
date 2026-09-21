@@ -310,6 +310,14 @@ private extension CardInk {
         case .ember: [Color(red: 0.18, green: 0.07, blue: 0.04), Color(red: 0.55, green: 0.22, blue: 0.08)]
         case .ice: [Color(red: 0.06, green: 0.16, blue: 0.18), Color(red: 0.12, green: 0.32, blue: 0.34)]
         case .kraft: [WinkColor.kraft, Color(red: 0.22, green: 0.20, blue: 0.16)]
+        case .coral: [Color(red: 0.35, green: 0.08, blue: 0.10), Color(red: 0.76, green: 0.22, blue: 0.20)]
+        case .lavender: [Color(red: 0.16, green: 0.08, blue: 0.28), Color(red: 0.42, green: 0.20, blue: 0.62)]
+        case .ocean: [Color(red: 0.02, green: 0.12, blue: 0.26), Color(red: 0.04, green: 0.34, blue: 0.52)]
+        case .mint: [Color(red: 0.02, green: 0.20, blue: 0.16), Color(red: 0.08, green: 0.48, blue: 0.34)]
+        case .rose: [Color(red: 0.28, green: 0.06, blue: 0.16), Color(red: 0.62, green: 0.16, blue: 0.32)]
+        case .sky: [Color(red: 0.04, green: 0.18, blue: 0.30), Color(red: 0.12, green: 0.45, blue: 0.68)]
+        case .tangerine: [Color(red: 0.30, green: 0.10, blue: 0.01), Color(red: 0.78, green: 0.30, blue: 0.04)]
+        case .plum: [Color(red: 0.20, green: 0.03, blue: 0.22), Color(red: 0.55, green: 0.10, blue: 0.54)]
         }
     }
 }
