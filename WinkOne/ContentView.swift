@@ -1,5 +1,6 @@
 import CoreHaptics
 import PencilKit
+import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -7,6 +8,7 @@ struct ContentView: View {
     @AppStorage("winkName") private var winkName = ""
     @AppStorage("winkOnboarded") private var onboarded = false
     @AppStorage("wink.agreedTermsVersion") private var agreedTermsVersion = ""
+    @AppStorage("wink.profilePhotoData") private var profilePhotoData = Data()
     @StateObject private var manager = MultipeerManager()
     @StateObject private var location = LocationProvider()
     @ObservedObject private var moderation = ModerationStore.shared
@@ -29,6 +31,7 @@ struct ContentView: View {
     @State private var handwrittenCaption = ""
     @State private var linkText = ""
     @State private var safetySheet: SafetySheet?
+    @State private var dockCollapsed = false
 
     /// Guideline 1.2: nothing can be composed or received until the user has
     /// accepted the current terms, which state the zero-tolerance policy.
@@ -101,31 +104,25 @@ struct ContentView: View {
             radar
                 .allowsHitTesting(false)
 
-            VStack(spacing: 0) {
-                header
-                    .padding(.horizontal, 22)
-                    .padding(.top, 8)
-
-                nearbyStrip
-                    .padding(.top, 18)
-
-                if selectedAtmosphere != "Symbols" && selectedAtmosphere != "Handwritten" && selectedAtmosphere != "Links" {
-                    Spacer(minLength: 12)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    header
+                        .padding(.horizontal, 22)
+                        .padding(.top, 8)
+                    nearbyStrip
+                        .padding(.top, 18)
+                    if selectedAtmosphere != "Symbols" && selectedAtmosphere != "Handwritten" && selectedAtmosphere != "Links" {
+                        Spacer(minLength: 12)
+                    }
+                    cardDeck
+                        .frame(maxWidth: 390)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 16)
+                    atmosphereRow
+                        .padding(.top, 18)
+                    packRow
+                        .padding(.top, 10)
                 }
-
-                cardDeck
-                    .padding(.horizontal, (selectedAtmosphere == "Symbols" || selectedAtmosphere == "Handwritten" || selectedAtmosphere == "Links") ? 0 : 28)
-
-                atmosphereRow
-                    .padding(.top, 18)
-
-                packRow
-                    .padding(.top, 10)
-
-                actionRow
-                    .padding(.horizontal, 22)
-                    .padding(.top, 18)
-                    .padding(.bottom, 16)
             }
 
             if let incoming = manager.incoming {
@@ -167,6 +164,9 @@ struct ContentView: View {
                 }
                 .zIndex(10)
             }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            dock
         }
         .onAppear {
             prepareHaptics()
@@ -230,7 +230,7 @@ struct ContentView: View {
             .interactiveDismissDisabled()
         }
         .sheet(isPresented: $showNameSetup) {
-            NameSetupView(name: $winkName) {
+            NameSetupView(name: $winkName, photoData: $profilePhotoData) {
                 manager.bootstrap(name: winkName, atmosphere: selectedAtmosphere)
             }
             .interactiveDismissDisabled(winkName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -264,6 +264,7 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(alignment: .center) {
+            profileAvatar
             VStack(alignment: .leading, spacing: 2) {
                 Text("WINK")
                     .font(WinkFont.brand(34))
@@ -277,6 +278,7 @@ struct ContentView: View {
                         .tracking(1.8)
                         .foregroundStyle(.white.opacity(0.55))
                 }
+
             }
             Spacer()
             if manager.incoming != nil {
@@ -310,6 +312,25 @@ struct ContentView: View {
             }
             .accessibilityLabel("Safety Center: report, block, remove, contact")
         }
+    }
+
+    private var profileAvatar: some View {
+            Group {
+                if let image = UIImage(data: profilePhotoData) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+            }
+            .frame(width: 38, height: 38)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(WinkColor.volt.opacity(0.7), lineWidth: 1))
+            .accessibilityLabel("Profile photo")
     }
 
     private var displayName: String {
@@ -408,8 +429,35 @@ struct ContentView: View {
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .frame(height: 440)
+                .frame(maxWidth: 360)
             }
         }
+    }
+
+    private var dock: some View {
+        VStack(spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    dockCollapsed.toggle()
+                }
+            } label: {
+                Image(systemName: dockCollapsed ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .frame(width: 44, height: 24)
+            }
+            .accessibilityLabel(dockCollapsed ? "Expand action dock" : "Collapse action dock")
+
+            if !dockCollapsed {
+                actionRow
+                    .padding(.horizontal, 22)
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+        .background(.ultraThinMaterial)
     }
 
     private var atmosphereRow: some View {
@@ -670,10 +718,12 @@ enum SafetySheet: Identifiable {
 
 struct NameSetupView: View {
     @Binding var name: String
+    @Binding var photoData: Data
     var onDone: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
     @State private var nameError: String?
+    @State private var photoItem: PhotosPickerItem?
 
     var body: some View {
         ZStack {
@@ -694,6 +744,34 @@ struct NameSetupView: View {
                     .overlay(alignment: .bottom) {
                         Rectangle().fill(WinkColor.volt).frame(height: 2)
                     }
+                PhotosPicker(selection: $photoItem, matching: .images, photoLibrary: .shared()) {
+                    HStack(spacing: 10) {
+                        if let image = UIImage(data: photoData) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 54, height: 54)
+                                .clipShape(Circle())
+                        } else {
+                            Image(systemName: "photo.circle.fill")
+                                .font(.system(size: 30))
+                        }
+                        Text(photoData.isEmpty ? "ADD NAME TAG PHOTO" : "CHANGE NAME TAG PHOTO")
+                            .font(WinkFont.label(12))
+                            .tracking(1)
+                    }
+                    .foregroundStyle(WinkColor.volt)
+                }
+                .onChange(of: photoItem) { _, item in
+                    guard let item else { return }
+                    Task {
+                        if let data = try? await item.loadTransferable(type: Data.self),
+                           let image = UIImage(data: data),
+                           let jpeg = image.jpegData(compressionQuality: 0.82) {
+                            await MainActor.run { photoData = jpeg }
+                        }
+                    }
+                }
                 if let nameError {
                     Text(nameError)
                         .font(WinkFont.body(14))

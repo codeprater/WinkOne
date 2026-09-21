@@ -36,7 +36,15 @@ enum SFSymbolCatalog {
               let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode(File.self, from: data)
         else {
-            return File(categories: [], symbols: [])
+            let names = [
+                "paperplane.fill", "tray.badge.fill", "point.3.connected.trianglepath.dotted",
+                "heart.fill", "hand.wave.fill", "bolt.fill", "eye.fill", "wineglass.fill",
+                "sparkles", "star.fill", "sun.max.fill", "moon.fill", "flame.fill",
+                "face.smiling.fill", "party.popper.fill", "music.note", "camera.fill",
+                "photo.fill", "mappin.and.ellipse", "link", "person.2.fill"
+            ]
+            let fallback = names.map { SFSymbolRecord(n: $0, c: "featured", k: $0.replacingOccurrences(of: ".", with: " ")) }
+            return File(categories: [SFSymbolCategory(key: "featured", label: "Featured")], symbols: fallback)
         }
         return decoded
     }()
