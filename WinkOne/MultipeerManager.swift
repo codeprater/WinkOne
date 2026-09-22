@@ -329,6 +329,7 @@ extension MultipeerManager: MCSessionDelegate {
             // matches the objectionable-content filter is dropped, never shown.
             if ContentFilter.check(payload: payload).isBlocked {
                 moderation.noteFiltered()
+                delivery = .blocked("Incoming content was blocked by WINK's safety filter.")
                 return
             }
 

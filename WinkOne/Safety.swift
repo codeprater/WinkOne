@@ -17,6 +17,7 @@ enum WinkAgreement {
     static let responseWindowHours = 24
 
     static let minimumAge = 18
+    static let appStoreAgeRating = "18+"
 
     static let summary = """
     WINK has zero tolerance for objectionable content and abusive users.
@@ -377,26 +378,85 @@ struct BlockedUser: Codable, Identifiable, Hashable {
 struct WinkReport: Codable, Identifiable, Hashable {
     let id: UUID
     let reportedName: String
+    let targetContentID: UUID?
     let reason: String
     let details: String
     let evidence: String
     let date: Date
+    var status: ReportStatus
+    var deadline: Date
+    var removedAt: Date?
+    var ejectedAt: Date?
+    var updatedAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case id, reportedName, targetContentID, reason, details, evidence, date
+        case status, deadline, removedAt, ejectedAt, updatedAt
+    }
 
     init(
         id: UUID = UUID(),
         reportedName: String,
+        targetContentID: UUID? = nil,
         reason: String,
         details: String,
         evidence: String,
-        date: Date = Date()
+        date: Date = Date(),
+        status: ReportStatus = .open,
+        deadline: Date? = nil,
+        removedAt: Date? = nil,
+        ejectedAt: Date? = nil,
+        updatedAt: Date? = nil
     ) {
         self.id = id
         self.reportedName = reportedName
+        self.targetContentID = targetContentID
         self.reason = reason
         self.details = details
         self.evidence = evidence
         self.date = date
+        self.status = status
+        self.deadline = deadline ?? Self.reviewDeadline(from: date)
+        self.removedAt = removedAt
+        self.ejectedAt = ejectedAt
+        self.updatedAt = updatedAt ?? date
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let date = try container.decode(Date.self, forKey: .date)
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            reportedName: try container.decode(String.self, forKey: .reportedName),
+            targetContentID: try container.decodeIfPresent(UUID.self, forKey: .targetContentID),
+            reason: try container.decode(String.self, forKey: .reason),
+            details: try container.decode(String.self, forKey: .details),
+            evidence: try container.decode(String.self, forKey: .evidence),
+            date: date,
+            status: try container.decodeIfPresent(ReportStatus.self, forKey: .status) ?? .open,
+            deadline: try container.decodeIfPresent(Date.self, forKey: .deadline),
+            removedAt: try container.decodeIfPresent(Date.self, forKey: .removedAt),
+            ejectedAt: try container.decodeIfPresent(Date.self, forKey: .ejectedAt),
+            updatedAt: try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        )
+    }
+
+    static func reviewDeadline(from date: Date) -> Date {
+        date.addingTimeInterval(TimeInterval(WinkAgreement.responseWindowHours) * 60 * 60)
+    }
+
+    var isResolved: Bool {
+        status == .resolvedRemoved || status == .resolvedNoAction
+    }
+}
+
+enum ReportStatus: String, Codable, CaseIterable, Identifiable {
+    case open = "Open"
+    case underReview = "Under review"
+    case resolvedRemoved = "Resolved — removed/ejected"
+    case resolvedNoAction = "Resolved — no action"
+
+    var id: String { rawValue }
 }
 
 struct ReceivedWink: Codable, Identifiable, Equatable {
@@ -477,19 +537,50 @@ final class ModerationStore: ObservableObject {
         name: String,
         reason: ReportReason,
         details: String,
-        evidence: String
+        evidence: String,
+        targetContentID: UUID? = nil,
+        date: Date = Date()
     ) -> WinkReport {
         let report = WinkReport(
             reportedName: name.isEmpty ? "Unknown sender" : name,
+            targetContentID: targetContentID,
             reason: reason.rawValue,
             details: details.trimmingCharacters(in: .whitespacesAndNewlines),
-            evidence: ContentFilter.masked(evidence)
+            evidence: ContentFilter.masked(evidence),
+            date: date
         )
         reports.insert(report, at: 0)
         // Reporting ejects the sender and removes their content on the spot.
         block(name)
         persist()
         return report
+    }
+
+    /// Local operator workflow. This records the action and audit timestamps;
+    /// it cannot eject a remote device or enforce a server-side removal.
+    func markUnderReview(_ report: WinkReport) {
+        updateReport(report.id) {
+            $0.status = .underReview
+            $0.updatedAt = Date()
+        }
+    }
+
+    func resolve(_ report: WinkReport, removeAndEject: Bool) {
+        updateReport(report.id) {
+            $0.status = removeAndEject ? .resolvedRemoved : .resolvedNoAction
+            $0.updatedAt = Date()
+            if removeAndEject {
+                $0.removedAt = Date()
+                $0.ejectedAt = Date()
+            }
+        }
+        if removeAndEject {
+            if let targetContentID = report.targetContentID,
+               let wink = received.first(where: { $0.id == targetContentID }) {
+                remove(wink)
+            }
+            block(report.reportedName)
+        }
     }
 
     // MARK: Local history ("the feed")
@@ -536,6 +627,7 @@ final class ModerationStore: ObservableObject {
            let decoded = try? decoder.decode([WinkReport].self, from: data) {
             reports = decoded
         }
+
         if let data = defaults.data(forKey: receivedKey),
            let decoded = try? decoder.decode([ReceivedWink].self, from: data) {
             received = decoded
@@ -552,6 +644,12 @@ final class ModerationStore: ObservableObject {
             blocked.append(BlockedUser(name: name, date: Date()))
         }
         defaults.removeObject(forKey: legacyBlockedKey)
+        persist()
+    }
+
+    private func updateReport(_ id: UUID, update: (inout WinkReport) -> Void) {
+        guard let index = reports.firstIndex(where: { $0.id == id }) else { return }
+        update(&reports[index])
         persist()
     }
 

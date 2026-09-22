@@ -668,8 +668,9 @@ struct ContentView: View {
         if let symbol = payload.symbolName { parts.append("symbol: \(symbol)") }
         if let place = payload.placeName { parts.append("place: \(place)") }
         parts.append("pack: \(payload.pack) / \(payload.atmosphere)")
+        let contentID = moderation.received.first(where: { $0.payload == payload })?.id
         manager.dismissIncoming()
-        return ReportTarget(name: payload.fromName, evidence: parts.joined(separator: " \u{2022} "))
+        return ReportTarget(name: payload.fromName, evidence: parts.joined(separator: " \u{2022} "), contentID: contentID)
     }
 
     /// Guideline 1.2: remove a card from the device immediately.

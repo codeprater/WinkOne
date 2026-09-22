@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import WinkOne
 
@@ -27,5 +28,66 @@ struct WinkOneTests {
     @Test func symbolCatalogAlwaysProvidesSelectionOptions() {
         #expect(!SFSymbolCatalog.matches("", category: "").isEmpty)
         #expect(SFSymbolCatalog.isAvailable(WinkSymbol.send))
+    }
+
+    @Test func safetyFilterBlocksObjectionableContentAtIngress() {
+        #expect(ContentFilter.check(text: "send nudes").isBlocked)
+        #expect(ContentFilter.check(name: "safe person").isBlocked == false)
+        #expect(ContentFilter.check(link: "https://pornhub.com/video").isBlocked)
+    }
+
+    @Test func ageGateAndAppStoreRatingAreAdultOnly() {
+        #expect(WinkAgreement.minimumAge == 18)
+        #expect(WinkAgreement.appStoreAgeRating == "18+")
+    }
+
+    @Test func reportDeadlineIsExactly24Hours() {
+        let submitted = Date(timeIntervalSince1970: 1_000_000)
+        let report = WinkReport(
+            reportedName: "sender",
+            reason: ReportReason.harassment.rawValue,
+            details: "",
+            evidence: "",
+            date: submitted
+        )
+        #expect(report.deadline == submitted.addingTimeInterval(24 * 60 * 60))
+        #expect(report.status == .open)
+        #expect(!report.isResolved)
+    }
+
+    @Test @MainActor func blockingAndDeletionUpdateLocalState() throws {
+        let store = ModerationStore.shared
+        let name = "test-\(UUID().uuidString)"
+        let payload = WinkPayload.from(plain: "hello", fromName: name)
+        store.remember(payload)
+        let wink = try #require(store.received.first(where: { $0.payload == payload }))
+        store.block(name)
+        #expect(store.isBlocked(name))
+        #expect(!store.received.contains(wink))
+        store.unblock(BlockedUser(name: name, date: Date()))
+        #expect(!store.isBlocked(name))
+    }
+
+    @Test @MainActor func reportCanResolveWithRemovalAndEjectionAudit() throws {
+        let store = ModerationStore.shared
+        let name = "report-\(UUID().uuidString)"
+        let payload = WinkPayload.from(plain: "bad", fromName: name)
+        store.remember(payload)
+        let wink = try #require(store.received.first(where: { $0.payload == payload }))
+        let report = store.report(
+            name: name,
+            reason: .other,
+            details: "test",
+            evidence: "bad",
+            targetContentID: wink.id
+        )
+        store.resolve(report, removeAndEject: true)
+        let resolved = try #require(store.reports.first(where: { $0.id == report.id }))
+        #expect(resolved.status == .resolvedRemoved)
+        #expect(resolved.removedAt != nil)
+        #expect(resolved.ejectedAt != nil)
+        #expect(store.isBlocked(name))
+        #expect(!store.received.contains(wink))
+        store.unblock(BlockedUser(name: name, date: Date()))
     }
 }
