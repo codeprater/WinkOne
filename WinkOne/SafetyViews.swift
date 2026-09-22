@@ -64,6 +64,10 @@ struct AgreementGateView: View {
                             .font(.system(size: 13, weight: .regular, design: .rounded))
                             .foregroundStyle(.white.opacity(0.62))
                             .fixedSize(horizontal: false, vertical: true)
+
+                        Text("App Store age rating: \(WinkAgreement.appStoreAgeRating)")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(WinkColor.volt.opacity(0.9))
                     }
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
@@ -159,6 +163,50 @@ struct SafetyCenterView: View {
                         Label("Report content or a user", systemImage: "exclamationmark.bubble.fill")
                             .foregroundStyle(.red)
                     }
+
+                    Section {
+                        Text("This device keeps the review record and deadline locally. Because WINK uses direct peer-to-peer delivery, these actions cannot guarantee removal from another device or remote ejection.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if moderation.reports.filter({ !$0.isResolved }).isEmpty {
+                            Text("No open reports.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(moderation.reports.filter { !$0.isResolved }) { report in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text(report.reason)
+                                            .font(.system(size: 15, weight: .semibold))
+                                        Spacer()
+                                        Text(report.status.rawValue)
+                                            .font(.caption)
+                                            .foregroundStyle(report.deadline < Date() ? .red : .secondary)
+                                    }
+                                    Text("Target: \(report.reportedName) • reported \(report.date, style: .date)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text("Review by \(report.deadline, style: .date) at \(report.deadline, style: .time)")
+                                        .font(.caption)
+                                        .foregroundStyle(report.deadline < Date() ? .red : .secondary)
+                                    HStack {
+                                        Button("Mark under review") {
+                                            moderation.markUnderReview(report)
+                                        }
+                                        .buttonStyle(.borderless)
+                                        Button("Remove & eject", role: .destructive) {
+                                            moderation.resolve(report, removeAndEject: true)
+                                        }
+                                        .buttonStyle(.borderless)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                    } header: {
+                        Text("Developer review queue")
+                    } footer: {
+                        Text("Operator action log: each report includes its reason, target, timestamp, 24-hour deadline, removal state, and ejection timestamp.")
+                    }
                     Button {
                         SupportMail.open(subject: "WINK — Help request")
                     } label: {
@@ -252,9 +300,12 @@ struct SafetyCenterView: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(report.reason)
                                     .font(.system(size: 15, weight: .semibold))
-                                Text("\(report.reportedName) — \(report.date, style: .date)")
+                                Text("\(report.reportedName) — \(report.date, style: .date) at \(report.date, style: .time)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                Text("\(report.status.rawValue) • review by \(report.deadline, style: .date)")
+                                    .font(.caption)
+                                    .foregroundStyle(report.isResolved ? .green : .secondary)
                             }
                         }
                     }
@@ -322,6 +373,7 @@ struct ReportTarget: Identifiable {
     let id = UUID()
     var name: String
     var evidence: String
+    var contentID: UUID? = nil
 }
 
 struct ReportSheet: View {
@@ -393,7 +445,8 @@ struct ReportSheet: View {
             name: name,
             reason: reason,
             details: details,
-            evidence: target.evidence
+            evidence: target.evidence,
+            targetContentID: target.contentID
         )
         SupportMail.send(report: report)
         submitted = true
