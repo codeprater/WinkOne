@@ -2,6 +2,22 @@ import Combine
 import Foundation
 import SwiftUI
 
+/// A private, per-install identifier for moderation correlation. WINK remains
+/// pseudonymous to other users: this value is never rendered in the UI.
+enum WinkIdentity {
+    private static let key = "wink.moderation.installationID"
+
+    static var moderationID: String {
+        let defaults = UserDefaults.standard
+        if let existing = defaults.string(forKey: key), !existing.isEmpty {
+            return existing
+        }
+        let generated = UUID().uuidString.lowercased()
+        defaults.set(generated, forKey: key)
+        return generated
+    }
+}
+
 // MARK: - Agreement / EULA
 
 /// Everything the App Store Guideline 1.2 checklist needs users to see and accept
@@ -63,15 +79,18 @@ enum WinkAgreement {
     and blocks them from contacting you again.
 
     5. OUR COMMITMENT — \(responseWindowHours) HOURS
-    We act on every report of objectionable content within \(responseWindowHours) \
-    hours. Acting means removing the offending content and ejecting the user who \
-    provided it. Accounts and devices found to be sending objectionable content \
-    are permanently barred from WINK.
+    We review every report of objectionable content within \(responseWindowHours) \
+    hours. The app immediately removes the reported content and blocks/ejects the \
+    sender on your device. Developer action for remote removal or ejection \
+    requires the moderation service described in the in-app report workflow; \
+    until that service is connected, reports are sent to the developer for \
+    manual handling and peer-to-peer copies cannot be remotely deleted.
 
     6. BLOCKING AND REMOVAL
     You may block any user at any time, and you may remove any WINK from your \
     device immediately. Blocked users cannot discover you, connect to you, or \
-    deliver content to you. Removal is immediate and permanent on your device.
+    deliver content to you from this device. Removal is immediate and permanent \
+    on your device.
 
     7. HOW WINK WORKS
     WINK sends cards directly between nearby devices over an encrypted peer-to-peer \
@@ -370,14 +389,22 @@ enum ContentFilter {
 // MARK: - Stored moderation state
 
 struct BlockedUser: Codable, Identifiable, Hashable {
-    var id: String { name.lowercased() }
+    var id: String { moderationID ?? name.lowercased() }
     let name: String
+    let moderationID: String?
     let date: Date
+
+    init(name: String, moderationID: String? = nil, date: Date) {
+        self.name = name
+        self.moderationID = moderationID
+        self.date = date
+    }
 }
 
 struct WinkReport: Codable, Identifiable, Hashable {
     let id: UUID
     let reportedName: String
+    let reportedModerationID: String?
     let targetContentID: UUID?
     let reason: String
     let details: String
@@ -390,13 +417,14 @@ struct WinkReport: Codable, Identifiable, Hashable {
     var updatedAt: Date
 
     private enum CodingKeys: String, CodingKey {
-        case id, reportedName, targetContentID, reason, details, evidence, date
+        case id, reportedName, reportedModerationID, targetContentID, reason, details, evidence, date
         case status, deadline, removedAt, ejectedAt, updatedAt
     }
 
     init(
         id: UUID = UUID(),
         reportedName: String,
+        reportedModerationID: String? = nil,
         targetContentID: UUID? = nil,
         reason: String,
         details: String,
@@ -410,6 +438,7 @@ struct WinkReport: Codable, Identifiable, Hashable {
     ) {
         self.id = id
         self.reportedName = reportedName
+        self.reportedModerationID = reportedModerationID
         self.targetContentID = targetContentID
         self.reason = reason
         self.details = details
@@ -428,6 +457,7 @@ struct WinkReport: Codable, Identifiable, Hashable {
         self.init(
             id: try container.decode(UUID.self, forKey: .id),
             reportedName: try container.decode(String.self, forKey: .reportedName),
+            reportedModerationID: try container.decodeIfPresent(String.self, forKey: .reportedModerationID),
             targetContentID: try container.decodeIfPresent(UUID.self, forKey: .targetContentID),
             reason: try container.decode(String.self, forKey: .reason),
             details: try container.decode(String.self, forKey: .details),
@@ -464,8 +494,8 @@ struct ReceivedWink: Codable, Identifiable, Equatable {
     let payload: WinkPayload
     let date: Date
 
-    init(id: UUID = UUID(), payload: WinkPayload, date: Date = Date()) {
-        self.id = id
+    init(id: UUID? = nil, payload: WinkPayload, date: Date = Date()) {
+        self.id = id ?? payload.contentID
         self.payload = payload
         self.date = date
     }
@@ -495,6 +525,7 @@ final class ModerationStore: ObservableObject {
     @Published private(set) var reports: [WinkReport] = []
     @Published private(set) var received: [ReceivedWink] = []
     @Published private(set) var filteredCount = 0
+    let localModerationID = WinkIdentity.moderationID
 
     private let blockedKey = "wink.blocked.v2"
     private let reportsKey = "wink.reports.v1"
@@ -510,18 +541,26 @@ final class ModerationStore: ObservableObject {
 
     // MARK: Blocking
 
-    func isBlocked(_ name: String) -> Bool {
+    func isBlocked(_ name: String, moderationID: String? = nil) -> Bool {
+        if let moderationID, !moderationID.isEmpty,
+           blocked.contains(where: { $0.moderationID == moderationID }) {
+            return true
+        }
         let needle = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !needle.isEmpty else { return false }
         return blocked.contains { $0.name.lowercased() == needle }
     }
 
-    func block(_ name: String) {
+    func block(_ name: String, moderationID: String? = nil) {
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, !isBlocked(clean) else { return }
-        blocked.insert(BlockedUser(name: clean, date: Date()), at: 0)
+        guard !clean.isEmpty || (moderationID?.isEmpty == false),
+              !isBlocked(clean, moderationID: moderationID) else { return }
+        blocked.insert(BlockedUser(name: clean.isEmpty ? "Unknown sender" : clean, moderationID: moderationID, date: Date()), at: 0)
         // Blocking removes everything that user ever sent, immediately.
-        received.removeAll { $0.fromName.lowercased() == clean.lowercased() }
+        received.removeAll {
+            $0.fromName.lowercased() == clean.lowercased()
+                || (moderationID != nil && $0.payload.effectiveSenderModerationID == moderationID)
+        }
         persist()
     }
 
@@ -539,10 +578,12 @@ final class ModerationStore: ObservableObject {
         details: String,
         evidence: String,
         targetContentID: UUID? = nil,
+        reportedModerationID: String? = nil,
         date: Date = Date()
     ) -> WinkReport {
         let report = WinkReport(
             reportedName: name.isEmpty ? "Unknown sender" : name,
+            reportedModerationID: reportedModerationID,
             targetContentID: targetContentID,
             reason: reason.rawValue,
             details: details.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -551,7 +592,7 @@ final class ModerationStore: ObservableObject {
         )
         reports.insert(report, at: 0)
         // Reporting ejects the sender and removes their content on the spot.
-        block(name)
+        block(name, moderationID: reportedModerationID)
         persist()
         return report
     }
@@ -579,13 +620,15 @@ final class ModerationStore: ObservableObject {
                let wink = received.first(where: { $0.id == targetContentID }) {
                 remove(wink)
             }
-            block(report.reportedName)
+            block(report.reportedName, moderationID: report.reportedModerationID)
         }
     }
 
     // MARK: Local history ("the feed")
 
     func remember(_ payload: WinkPayload) {
+        guard !isBlocked(payload.fromName, moderationID: payload.senderModerationID) else { return }
+        received.removeAll { $0.id == payload.contentID }
         received.insert(ReceivedWink(payload: payload), at: 0)
         if received.count > historyLimit {
             received.removeLast(received.count - historyLimit)

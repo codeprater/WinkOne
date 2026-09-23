@@ -67,8 +67,8 @@ final class MultipeerManager: NSObject, ObservableObject {
     /// Blocking is permanent, survives relaunch, and drops the peer on both
     /// the browse side and the invitation side.
     func block(_ peer: WinkPeer) {
-        moderation.block(peer.winkName)
-        moderation.block(peer.peerId.displayName)
+        moderation.block(peer.winkName, moderationID: peer.moderationID)
+        moderation.block(peer.peerId.displayName, moderationID: peer.moderationID)
         availablePeers.removeAll { $0.id == peer.id }
         if incomingPeer?.id == peer.id {
             dismissIncoming()
@@ -166,7 +166,7 @@ final class MultipeerManager: NSObject, ObservableObject {
     }
 
     private var discoveryInfo: [String: String] {
-        ["atm": atmosphere, "nm": winkName]
+        ["atm": atmosphere, "nm": winkName, "mid": moderation.localModerationID]
     }
 
     private func restartAdvertising() {
@@ -266,7 +266,9 @@ extension MultipeerManager: MCNearbyServiceBrowserDelegate {
     ) {
         Task { @MainActor in
             let name = info?["nm"] ?? peerID.displayName
-            if isBlocked(name) || isBlocked(peerID.displayName) { return }
+            let moderationID = info?["mid"]
+            if moderation.isBlocked(name, moderationID: moderationID)
+                || moderation.isBlocked(peerID.displayName, moderationID: moderationID) { return }
             // A peer advertising an objectionable display name never appears.
             if ContentFilter.check(name: name).isBlocked {
                 moderation.noteFiltered()
@@ -275,7 +277,8 @@ extension MultipeerManager: MCNearbyServiceBrowserDelegate {
             let peer = WinkPeer(
                 peerId: peerID,
                 winkName: name,
-                atmosphere: info?["atm"] ?? ""
+                atmosphere: info?["atm"] ?? "",
+                moderationID: moderationID
             )
             if let index = availablePeers.firstIndex(where: { $0.peerId == peerID }) {
                 availablePeers[index] = peer
@@ -324,6 +327,7 @@ extension MultipeerManager: MCSessionDelegate {
 
             // Blocked senders can never reach the screen, even mid-session.
             if isBlocked(payload.fromName) || isBlocked(peerID.displayName) { return }
+            if moderation.isBlocked(payload.fromName, moderationID: payload.senderModerationID) { return }
 
             // Screen incoming content before it is displayed. Anything that
             // matches the objectionable-content filter is dropped, never shown.

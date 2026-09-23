@@ -165,7 +165,7 @@ struct SafetyCenterView: View {
                     }
 
                     Section {
-                        Text("This device keeps the review record and deadline locally. Because WINK uses direct peer-to-peer delivery, these actions cannot guarantee removal from another device or remote ejection.")
+                        Text("This device keeps the review record and deadline locally. Reports are also prepared for the developer by email. Because WINK uses direct peer-to-peer delivery, local actions cannot guarantee removal from another device or remote ejection.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         if moderation.reports.filter({ !$0.isResolved }).isEmpty {
@@ -205,7 +205,7 @@ struct SafetyCenterView: View {
                     } header: {
                         Text("Developer review queue")
                     } footer: {
-                        Text("Operator action log: each report includes its reason, target, timestamp, 24-hour deadline, removal state, and ejection timestamp.")
+                        Text("Developer handling contract: each report includes its reason, private sender/content IDs, timestamp, 24-hour deadline, removal state, and ejection timestamp. Remote enforcement requires the future moderation service described in UGC_SAFETY.md.")
                     }
                     Button {
                         SupportMail.open(subject: "WINK — Help request")
@@ -215,7 +215,7 @@ struct SafetyCenterView: View {
                 } header: {
                     Text("Get help")
                 } footer: {
-                    Text("\(WinkAgreement.supportEmail)\nEvery report of objectionable content is reviewed and acted on within \(WinkAgreement.responseWindowHours) hours. Offending content is removed and the user who sent it is ejected from WINK.")
+                    Text("\(WinkAgreement.supportEmail)\nEvery report is reviewed within \(WinkAgreement.responseWindowHours) hours. Reported content is removed and its sender is blocked on this device immediately; remote ejection requires the future moderation service.")
                 }
 
                 Section {
@@ -251,7 +251,9 @@ struct SafetyCenterView: View {
                                 onReport: {
                                     reportTarget = ReportTarget(
                                         name: wink.fromName,
-                                        evidence: evidence(for: wink)
+                                        evidence: evidence(for: wink),
+                                        contentID: wink.id,
+                                        senderModerationID: wink.payload.senderModerationID
                                     )
                                 },
                                 onRemove: { moderation.remove(wink) }
@@ -374,6 +376,7 @@ struct ReportTarget: Identifiable {
     var name: String
     var evidence: String
     var contentID: UUID? = nil
+    var senderModerationID: String? = nil
 }
 
 struct ReportSheet: View {
@@ -421,7 +424,7 @@ struct ReportSheet: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                 } footer: {
-                    Text("Submitting immediately removes this content from your device and blocks the sender. We review every report and act within \(WinkAgreement.responseWindowHours) hours — removing the content and ejecting the user who sent it. Reports go to \(WinkAgreement.supportEmail).")
+                    Text("Submitting immediately removes this content from your device and blocks the sender. We review every report within \(WinkAgreement.responseWindowHours) hours. Reports are prepared for \(WinkAgreement.supportEmail); remote ejection requires the future moderation service.")
                 }
             }
             .navigationTitle("Report")
@@ -435,7 +438,7 @@ struct ReportSheet: View {
             .alert("Report sent", isPresented: $submitted) {
                 Button("OK") { dismiss() }
             } message: {
-                Text("The content is removed and \(name.isEmpty ? "the sender" : name) is blocked. We'll act on this within \(WinkAgreement.responseWindowHours) hours.")
+                Text("The content is removed and \(name.isEmpty ? "the sender" : name) is blocked on this device. We'll review this within \(WinkAgreement.responseWindowHours) hours.")
             }
         }
     }
@@ -446,7 +449,8 @@ struct ReportSheet: View {
             reason: reason,
             details: details,
             evidence: target.evidence,
-            targetContentID: target.contentID
+            targetContentID: target.contentID,
+            reportedModerationID: target.senderModerationID
         )
         SupportMail.send(report: report)
         submitted = true
@@ -499,6 +503,8 @@ enum SupportMail {
         Report ID: \(report.id.uuidString)
         Date: \(report.date.formatted())
         Reported user: \(report.reportedName)
+        Internal sender ID: \(report.reportedModerationID ?? "(legacy report)")
+        Content ID: \(report.targetContentID?.uuidString ?? "(not captured)")
         Reason: \(report.reason)
 
         Details:
