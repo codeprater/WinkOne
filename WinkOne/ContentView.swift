@@ -620,6 +620,8 @@ struct ContentView: View {
             atmosphere: card.atmosphere,
             ink: card.ink,
             fromName: MultipeerManager.sanitizedName(winkName),
+            senderModerationID: moderation.localModerationID,
+            contentID: UUID(),
             kind: kind,
             symbolName: card.symbolName,
             drawingData: card.drawingData,
@@ -670,7 +672,12 @@ struct ContentView: View {
         parts.append("pack: \(payload.pack) / \(payload.atmosphere)")
         let contentID = moderation.received.first(where: { $0.payload == payload })?.id
         manager.dismissIncoming()
-        return ReportTarget(name: payload.fromName, evidence: parts.joined(separator: " \u{2022} "), contentID: contentID)
+        return ReportTarget(
+            name: payload.fromName,
+            evidence: parts.joined(separator: " \u{2022} "),
+            contentID: contentID ?? payload.contentID,
+            senderModerationID: payload.senderModerationID
+        )
     }
 
     /// Guideline 1.2: remove a card from the device immediately.

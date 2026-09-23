@@ -55,6 +55,38 @@ struct WinkOneTests {
         #expect(!report.isResolved)
     }
 
+    @Test @MainActor func payloadCarriesPrivateModerationAndContentIdentifiers() throws {
+        let contentID = UUID()
+        let payload = WinkPayload(
+            text: "hello",
+            pack: "WINK",
+            atmosphere: "Lounge",
+            ink: .gold,
+            fromName: "Alias",
+            senderModerationID: "install-123",
+            contentID: contentID,
+            kind: .wink
+        )
+        let roundTrip = try JSONDecoder().decode(
+            WinkPayload.self,
+            from: JSONEncoder().encode(payload)
+        )
+
+        #expect(roundTrip.senderModerationID == "install-123")
+        #expect(roundTrip.contentID == contentID)
+        #expect(ReceivedWink(payload: roundTrip).id == contentID)
+    }
+
+    @Test @MainActor func legacyPayloadsRemainDecodableWithoutModerationIdentifiers() throws {
+        let legacy = """
+        {"text":"hello","pack":"WINK","atmosphere":"Lounge","ink":"gold","fromName":"Alias","kind":"wink"}
+        """.data(using: .utf8)!
+        let payload = try JSONDecoder().decode(WinkPayload.self, from: legacy)
+
+        #expect(payload.senderModerationID.isEmpty)
+        #expect(!payload.contentID.uuidString.isEmpty)
+    }
+
     @Test @MainActor func blockingAndDeletionUpdateLocalState() throws {
         let store = ModerationStore.shared
         let name = "test-\(UUID().uuidString)"
