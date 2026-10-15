@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		37A14F993080C35B00DE3AF4 /* WinkOneWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37A14F983080C35B00DE3AF4 /* WinkOneWatchApp.swift */; };
+		37A14F9B3080C37100DE3AF4 /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37A14F9A3080C37100DE3AF4 /* WatchContentView.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		A10000000000000000000019 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,6 +29,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		37A14F983080C35B00DE3AF4 /* WinkOneWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WinkOneWatchApp.swift; sourceTree = "<group>"; };
+		37A14F9A3080C37100DE3AF4 /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
 		A10000000000000000000004 /* WinkOne.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WinkOne.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000010 /* WinkOneTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WinkOneTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000000000000000000001B /* WinkOneUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WinkOneUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -78,6 +85,8 @@
 				A10000000000000000000006 /* WinkOne */,
 				A10000000000000000000012 /* WinkOneTests */,
 				A1000000000000000000001D /* WinkOneUITests */,
+				37A14F983080C35B00DE3AF4 /* WinkOneWatchApp.swift */,
+				37A14F9A3080C37100DE3AF4 /* WatchContentView.swift */,
 				A10000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -239,6 +248,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				37A14F993080C35B00DE3AF4 /* WinkOneWatchApp.swift in Sources */,
+				37A14F9B3080C37100DE3AF4 /* WatchContentView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -398,7 +409,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_TEAM = N73XW3H4MX;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -425,7 +436,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.courtneyprater.winkone;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -446,7 +457,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_TEAM = N73XW3H4MX;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -473,7 +484,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.courtneyprater.winkone;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;

@@ -7,6 +7,7 @@ import SwiftUI
 struct EmojiStudio: View {
     @Binding var sequence: String
     @Binding var genmojiData: Data?
+    @Binding var isEditingCard: Bool
     var fromName: String
     var placeName: String?
 
@@ -57,24 +58,28 @@ struct EmojiStudio: View {
     private var chosenRow: some View {
         HStack(spacing: 14) {
             Text(sequence.isEmpty ? "Pick up to three" : sequence)
-                .font(.system(size: sequence.isEmpty ? 14 : 30))
+                .font(.system(size: sequence.isEmpty ? 16.0 : 36.0))
                 .foregroundStyle(sequence.isEmpty ? .white.opacity(0.4) : .white)
                 .accessibilityLabel(
                     sequence.isEmpty ? "No emoji chosen" : "Chosen: \(sequence)"
                 )
+                .frame(minHeight: 44.0)
 
             if !sequence.isEmpty {
                 Button {
                     sequence.removeLast()
                 } label: {
                     Image(systemName: "delete.left.fill")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 20.0, weight: .semibold))
                         .foregroundStyle(WinkColor.ember)
+                        .frame(width: 44.0, height: 44.0)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Remove the last emoji")
+                .accessibilityAddTraits([.isButton])
             }
         }
-        .frame(height: 36)
+        .frame(height: 48.0)
     }
 
     /// Genmoji comes from the emoji keyboard, so this is a field to put it in
@@ -88,17 +93,22 @@ struct EmojiStudio: View {
                         genmojiData = nil
                     } label: {
                         Label("Remove Genmoji", systemImage: "trash")
-                            .font(WinkFont.label(11))
+                            .font(WinkFont.label(13))
                             .tracking(0.8)
                             .foregroundStyle(WinkColor.ember)
+                            .frame(minWidth: 110.0, minHeight: 44.0)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel("Remove the Genmoji")
+                    .accessibilityAddTraits([.isButton])
                 } else {
                     GenmojiField(
                         genmojiData: $genmojiData,
                         placeholder: "Tap here, then the emoji key, to make a Genmoji"
                     )
-                    .frame(height: 44)
+                    .frame(height: 44.0)
+                    .onTapGesture { isEditingCard = true }
+                    .onSubmit { isEditingCard = false }
                 }
             }
             .padding(.horizontal, 22)
@@ -108,16 +118,20 @@ struct EmojiStudio: View {
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 16.0, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.4))
+                .frame(width: 44.0, height: 44.0)
+                .contentShape(Rectangle())
             TextField("Search emoji", text: $query)
-                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .font(.system(size: 17.0, weight: .medium, design: .rounded))
                 .foregroundStyle(.white)
                 .tint(WinkColor.volt)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .focused($searchFocused)
-                .submitLabel(.done)
+                .onFocusChange { focused in isEditingCard = focused }
+                .onSubmit { isEditingCard = false }
+                .frame(minHeight: 44.0)
             if !query.isEmpty {
                 Button {
                     query = ""
@@ -125,8 +139,12 @@ struct EmojiStudio: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.white.opacity(0.35))
+                        .font(.system(size: 18.0))
+                        .frame(width: 44.0, height: 44.0)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Clear the search")
+                .accessibilityAddTraits([.isButton])
             }
         }
         .padding(.horizontal, 12)
@@ -137,50 +155,56 @@ struct EmojiStudio: View {
 
     private var groupRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: 10) {
                 ForEach(EmojiCatalog.groups) { item in
                     let on = item.name == group
+                    let traits: AccessibilityTraits = on ? [.isButton, .isSelected] : [.isButton]
                     Button {
                         group = item.name
                     } label: {
                         Image(systemName: item.icon)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 17.0, weight: .semibold))
                             .foregroundStyle(on ? WinkColor.night : .white.opacity(0.55))
-                            .frame(width: 40, height: 32)
+                            .frame(width: 44.0, height: 44.0)
                             .background(
                                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                                     .fill(on ? WinkColor.volt : Color.white.opacity(0.06))
                             )
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel(item.name)
-                    .accessibilityAddTraits(on ? [.isSelected] : [])
+                    .accessibilityAddTraits(traits)
                 }
             }
             .padding(.horizontal, 22)
         }
-        .frame(height: 36)
+        .frame(height: 52.0)
     }
 
     @ViewBuilder
     private var grid: some View {
         if visible.isEmpty {
             Text("Nothing matches that.")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(.system(size: 15.0, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.4))
                 .padding(.vertical, 18)
         } else {
-            LazyVGrid(columns: columns, spacing: 6) {
+            LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(visible, id: \.self) { emoji in
+                    let disabled = isFull
                     Button {
                         append(emoji)
                     } label: {
                         Text(emoji)
-                            .font(.system(size: 26))
-                            .frame(width: 36, height: 36)
-                            .opacity(isFull ? 0.35 : 1)
+                            .font(.system(size: 36.0))
+                            .frame(width: 54.0, height: 54.0)
+                            .opacity(disabled ? 0.35 : 1)
+                            .contentShape(Rectangle())
                     }
-                    .disabled(isFull)
+                    .onTapGesture { isEditingCard = true }
+                    .disabled(disabled)
                     .accessibilityLabel(emoji)
+                    .accessibilityAddTraits([.isButton])
                 }
             }
             .padding(.horizontal, 18)
@@ -193,3 +217,4 @@ struct EmojiStudio: View {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 }
+

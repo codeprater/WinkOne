@@ -147,17 +147,18 @@ struct PhotoStudio: View {
         } controls: {
             VStack(spacing: 14) {
             HStack(spacing: 22) {
-                sourceButton("photo.on.rectangle", "Library") { showLibrary = true }
-                sourceButton("camera.fill", "Camera") { showCamera = true }
+                sourceButton("photo.on.rectangle", "Library", isSelected: false) { showLibrary = true }
+                sourceButton("camera.fill", "Camera", isSelected: false) { showCamera = true }
                 sourceButton(
                     overlaySymbol == nil ? "face.smiling" : "checkmark.seal.fill",
-                    overlaySymbol == nil ? "Symbol" : "Change"
+                    overlaySymbol == nil ? "Symbol" : "Change",
+                    isSelected: overlaySymbol != nil
                 ) { showSymbolPicker.toggle() }
                 if WinkAI.makesImages {
-                    sourceButton("apple.intelligence", "Imagine") { showPlayground = true }
+                    sourceButton("apple.intelligence", "Imagine", isSelected: false) { showPlayground = true }
                 }
                 if photoData != nil {
-                    sourceButton("trash", "Clear") {
+                    sourceButton("trash", "Clear", isSelected: false) {
                         photoData = nil
                         overlaySymbol = nil
                     }
@@ -219,18 +220,20 @@ struct PhotoStudio: View {
         photoData = data
     }
 
-    private func sourceButton(_ icon: String, _ title: String, action: @escaping () -> Void) -> some View {
+    private func sourceButton(_ icon: String, _ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 5) {
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 24, weight: .semibold))
                 Text(title)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
             }
-            .foregroundStyle(WinkColor.volt)
-            .frame(width: 62)
+            .foregroundStyle(isSelected ? WinkColor.night : WinkColor.volt)
+            .frame(width: 62, height: 68)
         }
+        .contentShape(Rectangle())
         .accessibilityLabel(title)
+        .accessibilityAddTraits(.isButton)
     }
 
     private var symbolStrip: some View {
@@ -249,25 +252,27 @@ struct PhotoStudio: View {
                         overlaySymbol = nil
                     } label: {
                         Image(systemName: "nosign")
-                            .font(.system(size: 18))
+                            .font(.system(size: 26))
                             .foregroundStyle(overlaySymbol == nil ? WinkColor.night : .white.opacity(0.8))
-                            .frame(width: 44, height: 44)
+                            .frame(minWidth: 54, minHeight: 54)
                             .background(overlaySymbol == nil ? WinkColor.volt : Color.white.opacity(0.08))
                     }
                     .accessibilityLabel("No overlay symbol")
+                    .accessibilityAddTraits(.isButton)
 
                     ForEach(SFSymbolCatalog.matches(symbolQuery, category: "").prefix(60)) { record in
                         Button {
                             overlaySymbol = record.name
                         } label: {
                             Image(systemName: record.name)
-                                .font(.system(size: 18))
+                                .font(.system(size: 26))
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(overlaySymbol == record.name ? WinkColor.night : .white.opacity(0.85))
-                                .frame(width: 44, height: 44)
+                                .frame(minWidth: 54, minHeight: 54)
                                 .background(overlaySymbol == record.name ? WinkColor.volt : Color.white.opacity(0.06))
                         }
                         .accessibilityLabel(SFSymbolCatalog.spokenLabel(for: record))
+                        .accessibilityAddTraits(.isButton)
                     }
                 }
                 .padding(.horizontal, 22)

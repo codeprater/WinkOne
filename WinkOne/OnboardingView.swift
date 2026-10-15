@@ -6,6 +6,9 @@ struct OnboardingView: View {
 
     @State private var page = 0
     @State private var draft = ""
+    @State private var acceptedPolicies = false
+
+    private let lastPage = 6
 
     var body: some View {
         ZStack {
@@ -13,11 +16,12 @@ struct OnboardingView: View {
             VStack(spacing: 0) {
                 TabView(selection: $page) {
                     welcome.tag(0)
-                    namePage.tag(1)
-                    sendPage.tag(2)
-                    drawPage.tag(3)
-                    locationPage.tag(4)
-                    rulesPage.tag(5)
+                    summaryPage.tag(1)
+                    namePage.tag(2)
+                    sendPage.tag(3)
+                    drawPage.tag(4)
+                    locationPage.tag(5)
+                    rulesPage.tag(6)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .always))
 
@@ -39,58 +43,87 @@ struct OnboardingView: View {
     }
 
     private var canAdvance: Bool {
-        if page == 1 {
+        switch page {
+        case 1:
+            return acceptedPolicies
+        case 2:
             return !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        default:
+            return true
         }
-        return true
     }
 
-    private let lastPage = 5
-
     private func advance() {
-        if page == 1 {
+        switch page {
+        case 1:
+            // summary page, no draft update, just proceed if acceptedPolicies true
+            if !acceptedPolicies {
+                return
+            }
+        case 2:
             name = draft
-        }
-        if page == lastPage {
+        case 6:
             name = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? name : draft
             WinkNotify.shared.configure()
             onFinish()
             return
+        default:
+            break
         }
         withAnimation { page += 1 }
     }
 
-    /// Guideline 1.2: the zero-tolerance policy and the reporting, blocking and
-    /// removal tools are shown before the user ever composes a card.
-    private var rulesPage: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Image(systemName: "shield.lefthalf.filled")
-                .font(.system(size: 42, weight: .semibold))
-                .foregroundStyle(WinkColor.volt)
-            Text("Zero tolerance.")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-            Text("No objectionable content and no abusive users on WINK. Every card is filtered before it sends and before you see it.")
+    /// New Summary Page with Apple-required policies
+    private var summaryPage: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "exclamationmark.shield.fill")
+                    .font(.system(size: 40, weight: .semibold))
+                    .foregroundStyle(WinkColor.volt)
+                Text("18+ Age Requirement")
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+            Text("You must be 18 years or older to use WINK. By continuing, you agree to the End User License Agreement (EULA) and Terms of Service.")
                 .font(.system(size: 17, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.62))
+                .foregroundStyle(.white.opacity(0.85))
                 .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 12) {
-                toolRow("exclamationmark.triangle.fill", "Report any card you receive")
-                toolRow("hand.raised.fill", "Block anyone, permanently")
-                toolRow("trash.fill", "Remove any card instantly")
+            VStack(alignment: .leading, spacing: 14) {
+                policyRow("No tolerance for objectionable content or abusive behavior.")
+                policyRow("Every card is filtered before sending and before you see it.")
+                policyRow("You can report, block, and remove any card instantly.")
+                policyRow("We review all reports within 24 hours.")
+                policyRow("Contact support anytime via the in-app help section.")
             }
             .padding(.top, 4)
 
-            Text("We act on reports within \(WinkAgreement.responseWindowHours) hours. Content removed, sender ejected. Reach us at \(WinkAgreement.supportEmail).")
-                .font(.system(size: 14, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.5))
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 4)
+            Toggle(isOn: $acceptedPolicies) {
+                Text("I have read and agree to the policies above.")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+            .toggleStyle(SwitchToggleStyle(tint: WinkColor.volt))
+            .padding(.top, 20)
+
             Spacer()
         }
         .padding(28)
         .padding(.top, 40)
+    }
+
+    private func policyRow(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(WinkColor.volt)
+                .frame(width: 24)
+                .padding(.top, 2)
+            Text(text)
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func toolRow(_ icon: String, _ title: String) -> some View {
@@ -197,6 +230,39 @@ struct OnboardingView: View {
             Text("Off by default. When you want them to find you, pin the place on the card.")
                 .font(.system(size: 17, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.62))
+            Spacer()
+        }
+        .padding(28)
+        .padding(.top, 40)
+    }
+
+    /// Guideline 1.2: the zero-tolerance policy and the reporting, blocking and
+    /// removal tools are shown before the user ever composes a card.
+    private var rulesPage: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Image(systemName: "shield.lefthalf.filled")
+                .font(.system(size: 42, weight: .semibold))
+                .foregroundStyle(WinkColor.volt)
+            Text("Zero tolerance.")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+            Text("No objectionable content and no abusive users on WINK. Every card is filtered before it sends and before you see it.")
+                .font(.system(size: 17, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.62))
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 12) {
+                toolRow("exclamationmark.triangle.fill", "Report any card you receive")
+                toolRow("hand.raised.fill", "Block anyone, permanently")
+                toolRow("trash.fill", "Remove any card instantly")
+            }
+            .padding(.top, 4)
+
+            Text("We act on reports within \(WinkAgreement.responseWindowHours) hours. Content removed, sender ejected. Blocking and deleting content happens instantly. Reach us at \(WinkAgreement.supportEmail).")
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.5))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
             Spacer()
         }
         .padding(28)

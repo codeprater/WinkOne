@@ -26,52 +26,52 @@ struct MoodStudio: View {
             WinkCardView(message: current, fromName: fromName)
         } controls: {
             VStack(spacing: 16) {
-            TextField("One word", text: $word)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.white)
-                .tint(WinkColor.volt)
-                .textInputAutocapitalization(.characters)
-                .winkWritingTools(full: false)
-                .padding(.horizontal, 36)
-                .onChange(of: word) { _, newValue in
-                    // One word means one word — collapse anything past the first.
-                    let firstWord = newValue.split(separator: " ").first.map(String.init) ?? newValue
-                    let trimmed = String(firstWord.prefix(WinkLimits.moodWord))
-                    if trimmed != newValue { word = trimmed }
-                }
-                .accessibilityLabel("The one word on your mood card")
-
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(MoodPalette.swatches, id: \.hex) { swatch in
-                    Button {
-                        colorHex = swatch.hex
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(Color(winkHex: swatch.hex))
-                                .frame(width: 40, height: 40)
-                            Circle()
-                                .stroke(
-                                    colorHex.caseInsensitiveCompare(swatch.hex) == .orderedSame
-                                        ? WinkColor.volt : Color.white.opacity(0.18),
-                                    lineWidth: colorHex.caseInsensitiveCompare(swatch.hex) == .orderedSame ? 3 : 1
-                                )
-                                .frame(width: 46, height: 46)
-                        }
-                        .frame(height: 50)
+                TextField("One word", text: $word)
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white)
+                    .tint(WinkColor.volt)
+                    .textInputAutocapitalization(.characters)
+                    .winkWritingTools(full: false)
+                    .padding(.horizontal, 36)
+                    .onChange(of: word) { _, newValue in
+                        // One word means one word — collapse anything past the first.
+                        let firstWord = newValue.split(separator: " ").first.map(String.init) ?? newValue
+                        let trimmed = String(firstWord.prefix(WinkLimits.moodWord))
+                        if trimmed != newValue { word = trimmed }
                     }
-                    .accessibilityLabel(swatch.name)
-                    .accessibilityAddTraits(
-                        colorHex.caseInsensitiveCompare(swatch.hex) == .orderedSame ? [.isSelected] : []
-                    )
-                }
-            }
-            .padding(.horizontal, 30)
+                    .accessibilityLabel("The one word on your mood card")
 
-            Text("A color and a word. Nothing else to say.")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.42))
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(MoodPalette.swatches, id: \.hex) { swatch in
+                        let isSelected = colorHex.caseInsensitiveCompare(swatch.hex) == .orderedSame
+                        let strokeColor = isSelected ? WinkColor.night : Color.white.opacity(0.18)
+                        let lineWidth = isSelected ? 4 : 1
+                        let accessibilityTraits: AccessibilityTraits = isSelected ? [.isButton, .isSelected] : [.isButton]
+                        
+                        Button {
+                            colorHex = swatch.hex
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(winkHex: swatch.hex))
+                                    .frame(width: 46.0, height: 46.0)
+                                Circle()
+                                    .stroke(strokeColor, lineWidth: CGFloat(lineWidth))
+                                    .frame(width: 46.0, height: 46.0)
+                            }
+                            .frame(width: 54.0, height: 54.0)
+                        }
+                        .contentShape(Rectangle())
+                        .accessibilityLabel(swatch.name)
+                        .accessibilityAddTraits(accessibilityTraits)
+                    }
+                }
+                .padding(.horizontal, 30)
+
+                Text("A color and a word. Nothing else to say.")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.42))
             }
         }
     }

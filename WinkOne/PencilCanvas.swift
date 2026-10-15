@@ -77,7 +77,9 @@ struct PencilCanvas: UIViewRepresentable {
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            drawing.wrappedValue = canvasView.drawing
+            DispatchQueue.main.async {
+                self.drawing.wrappedValue = canvasView.drawing
+            }
         }
 
         func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {

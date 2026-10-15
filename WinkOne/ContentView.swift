@@ -209,36 +209,89 @@ struct ContentView: View {
             )
 
             GeometryReader { geo in
-            VStack(spacing: 0) {
-                header
-                    .padding(.horizontal, 22)
-                    .padding(.top, 8)
+                ZStack {
+                    VStack(spacing: 0) {
+                        header
+                            .padding(.horizontal, 22)
+                            .padding(.top, 8)
 
-                if nearby.isEmpty {
-                    radarHint
-                        .padding(.top, 14)
+                        // Replace radarHint with the new horizontal buttons for Inbox, Safety Center, Library, Ghost Mode
+                        HStack(spacing: 10) {
+                            Button {
+                                showInbox = true
+                            } label: {
+                                Image(systemName: WinkSymbol.inbox)
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundStyle(WinkColor.volt)
+                                    .frame(minWidth: 44, minHeight: 44)
+                            }
+                            .contentShape(Rectangle())
+
+                            Spacer()
+
+                            Button {
+                                safetySheet = .center
+                            } label: {
+                                Image(systemName: "shield.lefthalf.filled")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundStyle(.white.opacity(0.55))
+                                    .frame(minWidth: 44, minHeight: 44)
+                            }
+                            .contentShape(Rectangle())
+
+                            Spacer()
+
+                            Button {
+                                stopIdleTimer()
+                                showLibrary = true
+                            } label: {
+                                Image(systemName: "square.grid.2x2")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundStyle(.white.opacity(0.55))
+                                    .frame(minWidth: 44, minHeight: 44)
+                            }
+                            .contentShape(Rectangle())
+
+                            Spacer()
+
+                            Button {
+                                manager.toggleGhostMode()
+                            } label: {
+                                Image(systemName: manager.isDiscoverable ? "antenna.radiowaves.left.and.right" : "eye.slash")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundStyle(manager.isDiscoverable ? WinkColor.volt : .white.opacity(0.35))
+                                    .frame(minWidth: 44, minHeight: 44)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 8)
+
+                        // One flexible region between the header and the dock. The
+                        // card centers itself inside it and re-centers when the dock
+                        // collapses or hides.
+                        cardDeck
+                            .padding(.horizontal, composer.isStudio ? 0 : 28)
+                            .frame(maxHeight: .infinity)
+
+                        // Room for the dock so the card never sits under it.
+                        Color.clear.frame(height: dockRoom)
+                    }
+                    .onAppear { measure(geo.size) }
+                    .onChange(of: geo.size) { _, size in measure(size) }
+                    .onChange(of: dockExpanded) { _, expanded in
+                        measure(geo.size)
+                        if expanded { nudgeDock() }
+                    }
+                    .onChange(of: dockHidden) { _, _ in measure(geo.size) }
+                    .onChange(of: selectedAtmosphere) { _, _ in nudgeDock(expand: true) }
+                    .onDisappear { stopIdleTimer() }
+                    .environment(\.winkCardHeight, sharedCardHeight)
                 }
-
-                // One flexible region between the header and the dock. The
-                // card centers itself inside it and re-centers when the dock
-                // collapses or hides.
-                cardDeck
-                    .padding(.horizontal, composer.isStudio ? 0 : 28)
-                    .frame(maxHeight: .infinity)
-
-                // Room for the dock so the card never sits under it.
-                Color.clear.frame(height: dockRoom)
-            }
-            .onAppear { measure(geo.size) }
-            .onChange(of: geo.size) { _, size in measure(size) }
-            .onChange(of: dockExpanded) { _, expanded in
-                measure(geo.size)
-                if expanded { nudgeDock() }
-            }
-            .onChange(of: dockHidden) { _, _ in measure(geo.size) }
-            .onChange(of: selectedAtmosphere) { _, _ in nudgeDock(expand: true) }
-            .onDisappear { stopIdleTimer() }
-            .environment(\.winkCardHeight, sharedCardHeight)
+                .frame(maxHeight: .infinity, alignment: .center)
+                .safeAreaInset(edge: .bottom) {
+                    Color.clear.frame(height: dockRoom)
+                }
             }
 
             VStack {
@@ -394,7 +447,7 @@ struct ContentView: View {
                 onDismiss: { showInbox = false }
             )
         }
-        .sheet(item: $safetySheet) { sheet in
+        .fullScreenCover(item: $safetySheet) { sheet in
             switch sheet {
             case .center:
                 SafetyCenterView(moderation: moderation) { safetySheet = nil }
@@ -465,49 +518,10 @@ struct ContentView: View {
                         .tracking(1.8)
                         .foregroundStyle(.white.opacity(0.55))
                 }
+                .contentShape(Rectangle())
+                .frame(width: 44, height: 44)
             }
             Spacer()
-            if manager.incoming != nil {
-                Image(systemName: WinkSymbol.inbox)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(WinkColor.volt)
-                    .symbolEffect(.wiggle.byLayer, options: .repeating, isActive: true)
-                    .padding(.trailing, 8)
-            }
-            Image(systemName: WinkSymbol.nearby)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle((!nearby.isEmpty && manager.isDiscoverable) ? WinkColor.volt : .white.opacity(0.28))
-                .symbolEffect(.variableColor.iterative, isActive: !nearby.isEmpty && manager.isDiscoverable)
-                .padding(.trailing, 10)
-            Button {
-                manager.toggleGhostMode()
-            } label: {
-                Image(systemName: manager.isDiscoverable ? "antenna.radiowaves.left.and.right" : "eye.slash")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(manager.isDiscoverable ? WinkColor.volt : .white.opacity(0.35))
-                    .frame(width: 44, height: 44)
-            }
-            .accessibilityLabel(manager.isDiscoverable ? "Ghost Mode Off" : "Ghost Mode On")
-            Button {
-                stopIdleTimer()
-                showLibrary = true
-            } label: {
-                Image(systemName: "square.grid.2x2")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .frame(width: 44, height: 44)
-            }
-            .accessibilityLabel("Your winks: recent, shared, and every pack")
-
-            Button {
-                safetySheet = .center
-            } label: {
-                Image(systemName: "shield.lefthalf.filled")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .frame(width: 44, height: 44)
-            }
-            .accessibilityLabel("Safety Center: report, block, remove, contact")
         }
     }
 
@@ -676,21 +690,6 @@ struct ContentView: View {
             .padding(.bottom, 110)
             .frame(maxHeight: .infinity, alignment: .bottom)
             .transition(.opacity)
-    }
-
-    /// Shown only when the radar is empty, so the screen is never just rings.
-    private var radarHint: some View {
-        HStack(spacing: 10) {
-            Image(systemName: WinkSymbol.nearby)
-                .font(.system(size: 15, weight: .semibold))
-            Text(manager.isDiscoverable
-                 ? "Looking. They need WINK open too, on the same Wi Fi or in Bluetooth range."
-                 : "Ghost Mode. You're off the radar and it's off for you.")
-                .font(WinkFont.body(13))
-        }
-        .foregroundStyle(.white.opacity(0.45))
-        .multilineTextAlignment(.center)
-        .padding(.horizontal, 32)
     }
 
     private func decorated(_ card: WinkMessage) -> WinkMessage {
@@ -1302,3 +1301,4 @@ struct ParticlesModifier: ViewModifier {
 #Preview {
     ContentView()
 }
+

@@ -1,3 +1,4 @@
+#if !os(watchOS)
 import SwiftUI
 
 @main
@@ -13,3 +14,4 @@ struct WinkApp: App {
         }
     }
 }
+#endif
