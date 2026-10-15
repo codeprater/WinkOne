@@ -20,7 +20,7 @@ on:
       build_number:
         description: "CFBundleVersion to ship"
         required: true
-        default: "7"
+        default: "13"
       upload:
         description: "Upload to App Store Connect (false = build and keep the ipa only)"
         type: boolean
@@ -43,6 +43,8 @@ jobs:
           NEWEST=""
           NEWEST_VER="0"
           for app in /Applications/Xcode*.app; do
+            # App Store Connect rejects binaries built with a beta Xcode.
+            case "$app" in *beta*|*Beta*|*RC*|*_rc*) echo "  skip $app (pre-release)"; continue;; esac
             v=$(/usr/bin/plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist" 2>/dev/null || echo 0)
             echo "  $app -> $v"
             if [ "$(printf '%s\n%s\n' "$v" "$NEWEST_VER" | sort -V | tail -1)" = "$v" ]; then
