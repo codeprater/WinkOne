@@ -146,7 +146,7 @@ struct PhotoStudio: View {
             WinkCardView(message: current, fromName: fromName)
         } controls: {
             VStack(spacing: 14) {
-            HStack(spacing: 22) {
+            HStack(spacing: 8) {
                 sourceButton("photo.on.rectangle", "Library", isSelected: false) { showLibrary = true }
                 sourceButton("camera.fill", "Camera", isSelected: false) { showCamera = true }
                 sourceButton(
@@ -187,8 +187,8 @@ struct PhotoStudio: View {
                 Text(photoData == nil
                      ? "Pick a photo. Location and camera data are stripped before it sends."
                      : "Metadata stripped. Ready to send.")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.65))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 36)
                     .fixedSize(horizontal: false, vertical: true)

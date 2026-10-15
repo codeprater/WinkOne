@@ -54,8 +54,8 @@ struct NameTagStudio: View {
                 Text(photoData == nil
                      ? "Add a photo. Location and camera data are stripped before it sends."
                      : "Photo ready. Location and camera data were stripped.")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.65))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 36)
                     .fixedSize(horizontal: false, vertical: true)
@@ -85,10 +85,10 @@ struct NameTagStudio: View {
                 Image(systemName: icon)
                     .font(.system(size: 18, weight: .semibold))
                 Text(title)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
             }
             .foregroundStyle(WinkColor.volt)
-            .frame(width: 62, height: 50)
+            .frame(width: 72, height: 60)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color.white.opacity(0.07))

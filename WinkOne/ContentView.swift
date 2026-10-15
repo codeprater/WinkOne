@@ -53,7 +53,9 @@ struct ContentView: View {
     /// The dock collapses to a pill when the radar has the floor.
     @State private var dockExpanded = true
     @State private var showInbox = false
-    @State private var sharedCardHeight: CGFloat = 400
+    /// The dock steps aside while the keyboard is up, so it never covers
+    /// the field someone is typing into.
+    @State private var keyboardUp = false
     @State private var dockHidden = false
     @State private var idleTask: Task<Void, Never>?
     @State private var showLibrary = false
@@ -200,6 +202,8 @@ struct ContentView: View {
                 onSelect: { peer in send(currentCard, to: peer, kind: .wink) },
                 onBlock: { peer in manager.block(peer) },
                 onBackgroundTap: {
+                    // Never sweep the tools away while someone is making a card.
+                    guard composer.isDeck else { return }
                     stopIdleTimer()
                     withAnimation(.spring(response: 0.34, dampingFraction: 0.85)) {
                         dockExpanded = false
@@ -208,111 +212,49 @@ struct ContentView: View {
                 }
             )
 
-            GeometryReader { geo in
-                ZStack {
-                    VStack(spacing: 0) {
-                        header
-                            .padding(.horizontal, 22)
-                            .padding(.top, 8)
+            VStack(spacing: 0) {
+                header
+                    .padding(.horizontal, 22)
+                    .padding(.top, 8)
 
-                        // Replace radarHint with the new horizontal buttons for Inbox, Safety Center, Library, Ghost Mode
-                        HStack(spacing: 10) {
-                            Button {
-                                showInbox = true
-                            } label: {
-                                Image(systemName: WinkSymbol.inbox)
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(WinkColor.volt)
-                                    .frame(minWidth: 44, minHeight: 44)
-                            }
-                            .contentShape(Rectangle())
+                // One flexible region between the header and the dock. Each
+                // composer measures this region itself, so the card and its
+                // tools always fit in what is actually left.
+                cardDeck
+                    .padding(.horizontal, composer.isStudio ? 0 : 28)
+                    .frame(maxHeight: .infinity)
 
-                            Spacer()
-
-                            Button {
-                                safetySheet = .center
-                            } label: {
-                                Image(systemName: "shield.lefthalf.filled")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(.white.opacity(0.55))
-                                    .frame(minWidth: 44, minHeight: 44)
-                            }
-                            .contentShape(Rectangle())
-
-                            Spacer()
-
-                            Button {
-                                stopIdleTimer()
-                                showLibrary = true
-                            } label: {
-                                Image(systemName: "square.grid.2x2")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(.white.opacity(0.55))
-                                    .frame(minWidth: 44, minHeight: 44)
-                            }
-                            .contentShape(Rectangle())
-
-                            Spacer()
-
-                            Button {
-                                manager.toggleGhostMode()
-                            } label: {
-                                Image(systemName: manager.isDiscoverable ? "antenna.radiowaves.left.and.right" : "eye.slash")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(manager.isDiscoverable ? WinkColor.volt : .white.opacity(0.35))
-                                    .frame(minWidth: 44, minHeight: 44)
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 8)
-
-                        // One flexible region between the header and the dock. The
-                        // card centers itself inside it and re-centers when the dock
-                        // collapses or hides.
-                        cardDeck
-                            .padding(.horizontal, composer.isStudio ? 0 : 28)
-                            .frame(maxHeight: .infinity)
-
-                        // Room for the dock so the card never sits under it.
-                        Color.clear.frame(height: dockRoom)
-                    }
-                    .onAppear { measure(geo.size) }
-                    .onChange(of: geo.size) { _, size in measure(size) }
-                    .onChange(of: dockExpanded) { _, expanded in
-                        measure(geo.size)
-                        if expanded { nudgeDock() }
-                    }
-                    .onChange(of: dockHidden) { _, _ in measure(geo.size) }
-                    .onChange(of: selectedAtmosphere) { _, _ in nudgeDock(expand: true) }
-                    .onDisappear { stopIdleTimer() }
-                    .environment(\.winkCardHeight, sharedCardHeight)
-                }
-                .frame(maxHeight: .infinity, alignment: .center)
-                .safeAreaInset(edge: .bottom) {
-                    Color.clear.frame(height: dockRoom)
-                }
+                // Room for the dock, reserved once, so nothing sits under it.
+                Color.clear.frame(height: dockRoom)
             }
-
-            VStack {
-                Spacer()
-                WinkDock(
-                    isExpanded: $dockExpanded,
-                    isHidden: $dockHidden,
-                    selectedAtmosphere: $selectedAtmosphere,
-                    selectedDeckIndex: $selectedDeckIndex,
-                    selectedCardIndex: $selectedCardIndex,
-                    secretUntilTapped: $secretUntilTapped,
-                    visibleDecks: visibleDecks,
-                    unreadCount: moderation.received.count,
-                    locationSharing: location.isSharing,
-                    locationLabel: location.isSharing ? (location.placeName ?? "Locating") : "Place",
-                    onToggleLocation: { location.toggle() },
-                    onSend: presentSendSheet,
-                    onOpenInbox: { showInbox = true }
-                )
+            .onChange(of: dockExpanded) { _, expanded in
+                if expanded { nudgeDock() }
             }
-            .zIndex(1)
+            .onChange(of: selectedAtmosphere) { _, _ in nudgeDock(expand: true) }
+            .onDisappear { stopIdleTimer() }
+
+            if !keyboardUp {
+                VStack {
+                    Spacer()
+                    WinkDock(
+                        isExpanded: $dockExpanded,
+                        isHidden: $dockHidden,
+                        selectedAtmosphere: $selectedAtmosphere,
+                        selectedDeckIndex: $selectedDeckIndex,
+                        selectedCardIndex: $selectedCardIndex,
+                        secretUntilTapped: $secretUntilTapped,
+                        visibleDecks: visibleDecks,
+                        unreadCount: moderation.received.count,
+                        locationSharing: location.isSharing,
+                        locationLabel: location.isSharing ? (location.placeName ?? "Locating") : "Place",
+                        onToggleLocation: { location.toggle() },
+                        onSend: presentSendSheet,
+                        onOpenInbox: { showInbox = true }
+                    )
+                }
+                .zIndex(1)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
 
             if let incoming = manager.incoming {
                 IncomingWinkView(
@@ -368,6 +310,12 @@ struct ContentView: View {
             } else {
                 manager.bootstrap(name: winkName, atmosphere: selectedAtmosphere)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.2)) { keyboardUp = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.2)) { keyboardUp = false }
         }
         .onChange(of: selectedAtmosphere) { _, newValue in
             // load() sets the atmosphere and then aims at an exact card, so it
@@ -497,16 +445,17 @@ struct ContentView: View {
         }
     }
 
+    /// WINK and your name on the left, the three screen-level tools on the
+    /// right. Inbox lives in the dock, so it is not repeated here.
     private var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .center, spacing: 6) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text("WINK")
                     .font(WinkFont.brand(34))
                     .tracking(4)
                     .foregroundStyle(WinkColor.volt)
-                    // Futura-Bold at 34 with 4pt tracking overruns the space the
-                    // icons leave on a Pro Max, and SwiftUI was breaking it to
-                    // "WIN / K". One line, shrink if it has to.
+                    // Futura-Bold at 34 with 4pt tracking can overrun on a Pro
+                    // Max. One line, shrink if it has to.
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .minimumScaleFactor(0.6)
@@ -514,20 +463,70 @@ struct ContentView: View {
                     showNameSetup = true
                 } label: {
                     Text(displayName.uppercased())
-                        .font(WinkFont.label(11))
-                        .tracking(1.8)
-                        .foregroundStyle(.white.opacity(0.55))
+                        .font(WinkFont.label(12))
+                        .tracking(1.6)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(minHeight: 32, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
-                .frame(width: 44, height: 44)
+                .accessibilityLabel("Your name, \(displayName)")
+                .accessibilityHint("Change the name people see")
             }
-            Spacer()
+
+            Spacer(minLength: 8)
+
+            headerButton(
+                "square.grid.2x2",
+                tint: .white.opacity(0.8),
+                label: "Your winks: recent, shared, and every pack"
+            ) {
+                stopIdleTimer()
+                showLibrary = true
+            }
+
+            headerButton(
+                manager.isDiscoverable ? "antenna.radiowaves.left.and.right" : "eye.slash",
+                tint: manager.isDiscoverable ? WinkColor.volt : .white.opacity(0.6),
+                label: manager.isDiscoverable ? "Ghost Mode is off. You are visible" : "Ghost Mode is on. You are hidden"
+            ) {
+                manager.toggleGhostMode()
+            }
+
+            headerButton(
+                "shield.lefthalf.filled",
+                tint: .white.opacity(0.8),
+                label: "Safety Center: report, block, remove, contact"
+            ) {
+                safetySheet = .center
+            }
         }
     }
 
+    private func headerButton(
+        _ icon: String,
+        tint: Color,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(Color.white.opacity(0.08)))
+                .contentShape(Circle())
+        }
+        .accessibilityLabel(label)
+    }
+
     private var dockRoom: CGFloat {
+        if keyboardUp { return 0 }
         if dockHidden { return 44 }
-        return dockExpanded ? 190 : 78
+        if !dockExpanded { return 78 }
+        // The pack row only shows for the ready-made packs.
+        return composer.isDeck && !visibleDecks.isEmpty ? 214 : 176
     }
 
     /// The dock gets out of the way on its own. Any touch brings it back, then
@@ -538,7 +537,9 @@ struct ContentView: View {
         idleTask?.cancel()
         if expand { dockExpanded = true }
         if dockHidden { dockHidden = false }
-        guard dockAutoHide else { return }
+        // Auto-hide is for browsing packs. While someone is making a card the
+        // tools and Send stay put.
+        guard dockAutoHide, composer.isDeck else { return }
         idleTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
@@ -554,18 +555,6 @@ struct ContentView: View {
         idleTask = nil
     }
 
-
-    /// One height for every card on this screen. A Mood card, an Emoji card and
-    /// a Stadium card are literally the same size because they all read this.
-    /// Derived from the 3:4 portrait ratio, then capped by whatever vertical
-    /// room the header and the dock leave behind.
-    private func measure(_ size: CGSize) {
-        guard size.width > 0, size.height > 0 else { return }
-        let cardWidth = size.width - 56
-        let ideal = cardWidth / InviteCard.aspectRatio
-        let room = size.height - 150 - dockRoom
-        sharedCardHeight = max(300, min(ideal, max(300, room)))
-    }
 
     private var displayName: String {
         let name = winkName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -642,18 +631,21 @@ struct ContentView: View {
                     onReject: { reason in manager.delivery = .blocked(reason) }
                 )
             case .stadium, .lounge, .dailyGrind, .genZ:
-                TabView(selection: $selectedCardIndex) {
-                    ForEach(Array(currentDeck.messages.enumerated()), id: \.element.id) { index, wink in
-                        WinkCardView(message: decorated(wink), fromName: displayName)
-                            .tag(index)
-                            .padding(.bottom, 8)
+                // Sized from the space really left between header and dock,
+                // and centered in it, so the deck never runs under the dock.
+                GeometryReader { geo in
+                    let fit = min(geo.size.height - 8, geo.size.width / InviteCard.aspectRatio + 8)
+                    TabView(selection: $selectedCardIndex) {
+                        ForEach(Array(currentDeck.messages.enumerated()), id: \.element.id) { index, wink in
+                            WinkCardView(message: decorated(wink), fromName: displayName)
+                                .tag(index)
+                                .padding(.bottom, 8)
+                        }
                     }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .frame(height: max(0, fit))
+                    .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(height: sharedCardHeight)
-                // Same centering rule the studios follow, so the deck does not
-                // jump when the dock collapses out from under it.
-                .frame(maxHeight: .infinity, alignment: .center)
             }
         }
     }

@@ -98,6 +98,10 @@ struct HandwrittenStudio: View {
     @Binding var caption: String
     var toolkitActive: Bool
 
+    /// Apple's pen palette covers the bottom of the screen, Send included.
+    /// This puts it away when the drawing is done.
+    @State private var showPenTools = true
+
     var body: some View {
         StudioLayout {
             ZStack {
@@ -106,23 +110,37 @@ struct HandwrittenStudio: View {
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
-                PencilCanvas(drawing: $drawing, toolkitActive: toolkitActive)
+                PencilCanvas(drawing: $drawing, toolkitActive: toolkitActive && showPenTools)
                     .padding(8)
             }
             .aspectRatio(InviteCard.aspectRatio, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: InviteCard.cornerRadius, style: .continuous))
         } controls: {
             VStack(spacing: 12) {
-            HStack {
+            HStack(spacing: 10) {
+                Button {
+                    showPenTools.toggle()
+                } label: {
+                    Label(showPenTools ? "Done drawing" : "Pen tools",
+                          systemImage: showPenTools ? "checkmark" : "pencil.tip")
+                        .font(WinkFont.label(13))
+                        .foregroundStyle(WinkColor.night)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 40)
+                        .background(Capsule().fill(WinkColor.volt))
+                }
+                .accessibilityHint(showPenTools ? "Puts the pen palette away so you can send" : "Shows the pen palette")
+
                 Button("Clear") { drawing = PKDrawing() }
-                    .font(WinkFont.label(12))
+                    .font(WinkFont.label(13))
                     .foregroundStyle(WinkColor.volt)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 40)
+                    .background(Capsule().fill(Color.white.opacity(0.09)))
+
                 Spacer()
-                Text("Pencil or finger")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.4))
             }
-            .padding(.horizontal, 36)
+            .padding(.horizontal, 24)
 
             TextField("Caption this WINK", text: $caption)
                 .font(.system(size: 17, weight: .semibold, design: .rounded))

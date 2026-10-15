@@ -61,8 +61,8 @@ struct LinkStudio: View {
             }
         } controls: {
             Text(pasteHint ? "Pasted." : "Long press the field to paste any link")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.45))
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.7))
         }
     }
 

@@ -128,7 +128,7 @@ struct ZodiacStudio: View {
     var fromName: String
     var placeName: String?
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
 
     private var selected: Zodiac { Zodiac(rawValue: sign) ?? .aries }
 
@@ -177,14 +177,14 @@ struct ZodiacStudio: View {
                                 Image(systemName: item.symbol)
                                     .font(.system(size: 20, weight: .semibold))
                                 Text(item.rawValue.uppercased())
-                                    .font(WinkFont.label(8))
+                                    .font(WinkFont.label(12))
                                     .tracking(0.6)
                                     .lineLimit(1)
-                                    .minimumScaleFactor(0.7)
+                                    .minimumScaleFactor(0.8)
                             }
                             .foregroundStyle(item == selected ? WinkColor.night : item.accent)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 54)
+                            .frame(height: 60)
                             .background(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .fill(

@@ -7,7 +7,6 @@ import SwiftUI
 struct EmojiStudio: View {
     @Binding var sequence: String
     @Binding var genmojiData: Data?
-    @Binding var isEditingCard: Bool
     var fromName: String
     var placeName: String?
 
@@ -15,7 +14,9 @@ struct EmojiStudio: View {
     @State private var query = ""
     @FocusState private var searchFocused: Bool
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 8)
+    /// As many 50pt columns as the width allows. Eight fixed 54pt columns
+    /// ran past the edge of every iPhone.
+    private let columns = [GridItem(.adaptive(minimum: 50), spacing: 6)]
 
     private var current: WinkMessage {
         WinkMessage(
@@ -59,7 +60,7 @@ struct EmojiStudio: View {
         HStack(spacing: 14) {
             Text(sequence.isEmpty ? "Pick up to three" : sequence)
                 .font(.system(size: sequence.isEmpty ? 16.0 : 36.0))
-                .foregroundStyle(sequence.isEmpty ? .white.opacity(0.4) : .white)
+                .foregroundStyle(sequence.isEmpty ? .white.opacity(0.7) : .white)
                 .accessibilityLabel(
                     sequence.isEmpty ? "No emoji chosen" : "Chosen: \(sequence)"
                 )
@@ -107,8 +108,6 @@ struct EmojiStudio: View {
                         placeholder: "Tap here, then the emoji key, to make a Genmoji"
                     )
                     .frame(height: 44.0)
-                    .onTapGesture { isEditingCard = true }
-                    .onSubmit { isEditingCard = false }
                 }
             }
             .padding(.horizontal, 22)
@@ -119,7 +118,7 @@ struct EmojiStudio: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 16.0, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(.white.opacity(0.65))
                 .frame(width: 44.0, height: 44.0)
                 .contentShape(Rectangle())
             TextField("Search emoji", text: $query)
@@ -129,8 +128,7 @@ struct EmojiStudio: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .focused($searchFocused)
-                .onFocusChange { focused in isEditingCard = focused }
-                .onSubmit { isEditingCard = false }
+                .submitLabel(.done)
                 .frame(minHeight: 44.0)
             if !query.isEmpty {
                 Button {
@@ -164,7 +162,7 @@ struct EmojiStudio: View {
                     } label: {
                         Image(systemName: item.icon)
                             .font(.system(size: 17.0, weight: .semibold))
-                            .foregroundStyle(on ? WinkColor.night : .white.opacity(0.55))
+                            .foregroundStyle(on ? WinkColor.night : .white.opacity(0.75))
                             .frame(width: 44.0, height: 44.0)
                             .background(
                                 RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -186,7 +184,7 @@ struct EmojiStudio: View {
         if visible.isEmpty {
             Text("Nothing matches that.")
                 .font(.system(size: 15.0, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(.white.opacity(0.7))
                 .padding(.vertical, 18)
         } else {
             LazyVGrid(columns: columns, spacing: 8) {
@@ -196,12 +194,11 @@ struct EmojiStudio: View {
                         append(emoji)
                     } label: {
                         Text(emoji)
-                            .font(.system(size: 36.0))
-                            .frame(width: 54.0, height: 54.0)
+                            .font(.system(size: 32.0))
+                            .frame(width: 50.0, height: 50.0)
                             .opacity(disabled ? 0.35 : 1)
                             .contentShape(Rectangle())
                     }
-                    .onTapGesture { isEditingCard = true }
                     .disabled(disabled)
                     .accessibilityLabel(emoji)
                     .accessibilityAddTraits([.isButton])

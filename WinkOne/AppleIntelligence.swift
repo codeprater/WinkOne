@@ -151,21 +151,21 @@ struct SuggestLinesRow: View {
                         Image(systemName: "apple.intelligence")
                             .font(.system(size: 13, weight: .semibold))
                         Text(suggester.isWorking ? "Writing" : "Write me one")
-                            .font(WinkFont.label(11))
+                            .font(WinkFont.label(13))
                             .tracking(1)
                     }
                     .foregroundStyle(WinkColor.volt)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(Color.white.opacity(0.07)))
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 40)
+                    .background(Capsule().fill(Color.white.opacity(0.09)))
                 }
                 .disabled(suggester.isWorking)
                 .accessibilityLabel("Suggest a line with Apple Intelligence")
 
                 if let note = suggester.note {
                     Text(note)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.65))
                 }
 
                 if !suggester.lines.isEmpty {

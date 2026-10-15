@@ -292,8 +292,8 @@ struct VoiceStudio: View {
                         bakedLevels = []
                     } label: {
                         Label("Record again", systemImage: "arrow.counterclockwise")
-                            .font(WinkFont.label(12))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .font(WinkFont.label(13))
+                            .foregroundStyle(.white.opacity(0.8))
                     }
                     .accessibilityLabel("Discard and record again")
                 }
@@ -345,12 +345,12 @@ struct VoiceStudio: View {
             }
         } else if voiceData != nil {
             Text(String(format: "%.1f second recording ready", voiceDuration))
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.5))
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.7))
         } else {
             Text("Tap to record. Three seconds, that's it.")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.45))
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.7))
         }
     }
 }

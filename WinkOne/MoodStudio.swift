@@ -7,7 +7,7 @@ struct MoodStudio: View {
     var fromName: String
     var placeName: String?
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 6)
+    private let columns = [GridItem(.adaptive(minimum: 48), spacing: 10)]
 
     private var current: WinkMessage {
         WinkMessage(
@@ -45,8 +45,9 @@ struct MoodStudio: View {
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(MoodPalette.swatches, id: \.hex) { swatch in
                         let isSelected = colorHex.caseInsensitiveCompare(swatch.hex) == .orderedSame
-                        let strokeColor = isSelected ? WinkColor.night : Color.white.opacity(0.18)
-                        let lineWidth = isSelected ? 4 : 1
+                        // White ring reads on every swatch, Night included.
+                        let strokeColor = isSelected ? Color.white : Color.white.opacity(0.18)
+                        let lineWidth = isSelected ? 3 : 1
                         let accessibilityTraits: AccessibilityTraits = isSelected ? [.isButton, .isSelected] : [.isButton]
                         
                         Button {
@@ -55,23 +56,23 @@ struct MoodStudio: View {
                             ZStack {
                                 Circle()
                                     .fill(Color(winkHex: swatch.hex))
-                                    .frame(width: 46.0, height: 46.0)
+                                    .frame(width: 40.0, height: 40.0)
                                 Circle()
                                     .stroke(strokeColor, lineWidth: CGFloat(lineWidth))
                                     .frame(width: 46.0, height: 46.0)
                             }
-                            .frame(width: 54.0, height: 54.0)
+                            .frame(width: 48.0, height: 48.0)
                         }
                         .contentShape(Rectangle())
                         .accessibilityLabel(swatch.name)
                         .accessibilityAddTraits(accessibilityTraits)
                     }
                 }
-                .padding(.horizontal, 30)
+                .padding(.horizontal, 20)
 
                 Text("A color and a word. Nothing else to say.")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.42))
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.65))
             }
         }
     }

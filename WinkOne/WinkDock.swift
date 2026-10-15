@@ -23,6 +23,7 @@ struct WinkDock: View {
     var onOpenInbox: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showCardTypes = false
 
     private var composer: Composer { Composer(atmosphere: selectedAtmosphere) }
 
@@ -41,6 +42,15 @@ struct WinkDock: View {
         }
         .animation(reduceMotion ? .none : .spring(response: 0.34, dampingFraction: 0.85), value: isExpanded)
         .animation(reduceMotion ? .none : .spring(response: 0.38, dampingFraction: 0.86), value: isHidden)
+        .sheet(isPresented: $showCardTypes) {
+            CardTypePicker(current: composer) { picked in
+                showCardTypes = false
+                guard picked != composer else { return }
+                selectedAtmosphere = picked.atmosphere
+                selectedDeckIndex = 0
+                selectedCardIndex = 0
+            }
+        }
         .gesture(
             DragGesture(minimumDistance: 14)
                 .onEnded { value in
@@ -113,9 +123,9 @@ struct WinkDock: View {
                 setExpanded(true)
             } label: {
                 Image(systemName: "chevron.up")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .frame(width: 34, height: 34)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .frame(width: 44, height: 44)
             }
             .accessibilityLabel("Show the tools")
         }
@@ -140,7 +150,7 @@ struct WinkDock: View {
             .accessibilityLabel("Hide the tools")
             .accessibilityAddTraits(.isButton)
 
-            composerStrip
+            cardTypeButton
 
             if composer.isDeck, !visibleDecks.isEmpty {
                 packStrip
@@ -156,41 +166,54 @@ struct WinkDock: View {
         .padding(.bottom, 10)
     }
 
-    private var composerStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(Composer.allCases) { item in
-                    let selected = item == composer
-                    Button {
-                        guard !selected else { return }
-                        selectedAtmosphere = item.atmosphere
-                        selectedDeckIndex = 0
-                        selectedCardIndex = 0
-                    } label: {
-                        VStack(spacing: 5) {
-                            Image(systemName: item.icon)
-                                .font(.system(size: 17, weight: .semibold))
-                            Text(item.displayName.uppercased())
-                                .font(WinkFont.label(9))
-                                .tracking(0.7)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.65)
-                        }
-                        .foregroundStyle(selected ? WinkColor.night : .white.opacity(0.62))
-                        .frame(width: 66, height: 52)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(selected ? WinkColor.volt : Color.white.opacity(0.06))
-                        )
-                    }
-                    .accessibilityLabel(item.displayName)
-                    .accessibilityValue(item.line)
-                    .accessibilityAddTraits(selected ? [.isSelected] : [])
+    /// One clear button that says what you are making and lets you change it.
+    /// Replaces a strip of thirteen tiny tiles that scrolled off the edge.
+    private var cardTypeButton: some View {
+        Button {
+            showCardTypes = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: composer.icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(WinkColor.night)
+                    .frame(width: 38, height: 38)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(WinkColor.volt)
+                    )
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(composer.displayName)
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text(composer.line)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.65))
+                        .lineLimit(1)
                 }
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 4) {
+                    Text("Change")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .foregroundStyle(WinkColor.volt)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(minHeight: 54)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.07))
+            )
+            .contentShape(Rectangle())
         }
-        .frame(height: 56)
+        .accessibilityLabel("Card type, \(composer.displayName)")
+        .accessibilityHint("Choose a different kind of card to make")
     }
 
     private var packStrip: some View {
@@ -202,16 +225,21 @@ struct WinkDock: View {
                         selectedCardIndex = 0
                     } label: {
                         Text(deck.name.uppercased())
-                            .font(WinkFont.label(12))
+                            .font(WinkFont.label(13))
                             .tracking(1.1)
-                            .foregroundStyle(selectedDeckIndex == index ? WinkColor.volt : .white.opacity(0.4))
+                            .foregroundStyle(selectedDeckIndex == index ? WinkColor.night : .white.opacity(0.75))
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: 32)
+                            .background(
+                                Capsule().fill(selectedDeckIndex == index ? WinkColor.volt : Color.white.opacity(0.07))
+                            )
                     }
                     .accessibilityAddTraits(selectedDeckIndex == index ? [.isSelected] : [])
                 }
             }
             .padding(.horizontal, 6)
         }
-        .frame(height: 22)
+        .frame(height: 34)
     }
 
     private var actionStrip: some View {
@@ -266,10 +294,10 @@ struct WinkDock: View {
                     Image(systemName: WinkSymbol.inbox)
                         .font(.system(size: 17, weight: .semibold))
                     Text("Inbox")
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
                 }
-                .foregroundStyle(unreadCount > 0 ? WinkColor.volt : .white.opacity(0.5))
-                .frame(width: 54, height: 46)
+                .foregroundStyle(unreadCount > 0 ? WinkColor.volt : .white.opacity(0.7))
+                .frame(width: 58, height: 48)
 
                 if unreadCount > 0 {
                     Text("\(min(unreadCount, 99))")
@@ -298,11 +326,12 @@ struct WinkDock: View {
                     .font(.system(size: 17, weight: .semibold))
                     .symbolEffect(.bounce, value: on)
                 Text(title)
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            .foregroundStyle(on ? WinkColor.volt : .white.opacity(0.5))
-            .frame(width: 54, height: 46)
+            .foregroundStyle(on ? WinkColor.volt : .white.opacity(0.7))
+            .frame(width: 58, height: 48)
         }
     }
 
@@ -319,5 +348,109 @@ struct WinkDock: View {
     private func setExpanded(_ value: Bool) {
         isExpanded = value
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+}
+
+// MARK: - Card type picker
+
+/// Every kind of card, as big labelled tiles in two plain groups: the ones you
+/// build yourself and the ready-made packs you swipe through.
+struct CardTypePicker: View {
+    var current: Composer
+    var onPick: (Composer) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    private let columns = [GridItem(.adaptive(minimum: 104), spacing: 12)]
+    private let makers = Composer.allCases.filter { $0.isStudio }
+    private let packs = Composer.allCases.filter { $0.isDeck }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 26) {
+                    section(
+                        "Make your own",
+                        "Your card on top, every tool right under it.",
+                        makers
+                    )
+                    section(
+                        "Ready-made packs",
+                        "Swipe through cards that are ready to send.",
+                        packs
+                    )
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+            }
+            .background(WinkColor.night.ignoresSafeArea())
+            .navigationTitle("Choose a card")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                        .foregroundStyle(WinkColor.volt)
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .preferredColorScheme(.dark)
+    }
+
+    private func section(_ title: String, _ subtitle: String, _ items: [Composer]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .accessibilityAddTraits(.isHeader)
+                Text(subtitle)
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.65))
+            }
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(items) { item in
+                    tile(item)
+                }
+            }
+        }
+    }
+
+    private func tile(_ item: Composer) -> some View {
+        let selected = item == current
+        return Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onPick(item)
+        } label: {
+            VStack(spacing: 8) {
+                Image(systemName: item.icon)
+                    .font(.system(size: 26, weight: .semibold))
+                    .frame(height: 30)
+                Text(item.displayName)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text(item.line)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .opacity(0.75)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(selected ? WinkColor.night : .white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, minHeight: 124)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(selected ? WinkColor.volt : Color.white.opacity(0.08))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(item.displayName)
+        .accessibilityValue(item.line)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 }

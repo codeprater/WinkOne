@@ -45,9 +45,11 @@ struct SymbolStudio: View {
             SuggestLinesRow(composerName: "Symbol", seed: selectedName, target: $caption)
 
             TextField("Search symbols", text: $query)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(.system(size: 16, weight: .medium, design: .rounded))
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(.white)
+                .padding(.vertical, 10)
+                .background(Capsule().fill(Color.white.opacity(0.08)).padding(.horizontal, 24))
                 .tint(WinkColor.volt)
                 .padding(.horizontal, 36)
 
@@ -87,9 +89,9 @@ struct SymbolStudio: View {
         } label: {
             VStack(spacing: 6) {
                 Text(label.uppercased())
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .tracking(1.1)
-                    .foregroundStyle(category == key ? WinkColor.volt : .white.opacity(0.38))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .tracking(1.0)
+                    .foregroundStyle(category == key ? WinkColor.volt : .white.opacity(0.7))
                 Rectangle()
                     .fill(category == key ? WinkColor.volt : Color.clear)
                     .frame(height: 2)

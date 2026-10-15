@@ -1,61 +1,57 @@
 import SwiftUI
 
-// MARK: - Shared card height
-
-private struct WinkCardHeightKey: EnvironmentKey {
-    static let defaultValue: CGFloat = 400
-}
-
-extension EnvironmentValues {
-    /// Every card on the main screen is this tall — deck cards and studio
-    /// previews alike. ContentView measures it once from the space the dock
-    /// leaves behind, so an Emoji card is exactly as big as a Stadium card.
-    var winkCardHeight: CGFloat {
-        get { self[WinkCardHeightKey.self] }
-        set { self[WinkCardHeightKey.self] = newValue }
-    }
-}
-
 // MARK: - Studio container
 
-/// The frame every composer sits in.
+/// The frame every composer sits in: the card on top, the tools underneath.
 ///
-/// Before this, each studio stacked a card and its controls in a plain VStack
-/// with no height budget, so on a tall phone the emoji grid and swatch rows
-/// spilled out of the card area and drew straight over the radar. The card now
-/// gets a fixed share and the controls scroll inside what is left.
+/// It measures the space it is actually given instead of reading one height
+/// computed elsewhere. The card may take at most `cardShare` of that space;
+/// everything below it belongs to the tools, in a panel that scrolls when a
+/// studio has more controls than fit. The tools can never be pushed off the
+/// screen by the card again.
 struct StudioLayout<Card: View, Controls: View>: View {
     @ViewBuilder var card: () -> Card
     @ViewBuilder var controls: () -> Controls
 
-    @Environment(\.winkCardHeight) private var cardHeight
-
-    /// The controls get a ceiling and scroll inside it. Without one the
-    /// ScrollView takes every spare point, the spacers collapse, and the card
-    /// sits wherever it lands instead of in the middle.
-    private let controlsCeiling: CGFloat = 340
+    /// The most of the height the card preview may take.
+    private let cardShare: CGFloat = 0.46
+    /// The card never shrinks past this, even with the keyboard up.
+    private let cardFloor: CGFloat = 150
 
     var body: some View {
-        VStack(spacing: 12) {
-            Spacer(minLength: 0)
+        GeometryReader { geo in
+            let byWidth = (geo.size.width - 64) / InviteCard.aspectRatio
+            let cardHeight = max(cardFloor, min(geo.size.height * cardShare, byWidth))
 
-            card()
-                .frame(height: cardHeight)
-                .padding(.horizontal, 20)
+            VStack(spacing: 10) {
+                card()
+                    .aspectRatio(InviteCard.aspectRatio, contentMode: .fit)
+                    .frame(height: cardHeight)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
 
-            ScrollView(.vertical, showsIndicators: false) {
-                controls()
-                    .padding(.top, 2)
-                    .padding(.bottom, 8)
+                ScrollView(.vertical) {
+                    controls()
+                        .padding(.top, 16)
+                        .padding(.bottom, 24)
+                        .frame(maxWidth: .infinity)
+                }
+                .scrollIndicators(.visible)
+                .scrollBounceBehavior(.basedOnSize)
+                .scrollDismissesKeyboard(.interactively)
+                .background(
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 24,
+                        topTrailingRadius: 24,
+                        style: .continuous
+                    )
+                    .fill(Color.white.opacity(0.06))
+                )
+                .padding(.horizontal, 8)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Card tools")
             }
-            .frame(maxHeight: controlsCeiling)
-            .scrollBounceBehavior(.basedOnSize)
-            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 36) }
-
-            Spacer(minLength: 0)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .frame(maxWidth: .infinity, alignment: .center)
-        .clipped()
     }
 }
