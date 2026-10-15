@@ -311,6 +311,7 @@ struct ContentView: View {
                 manager.bootstrap(name: winkName, atmosphere: selectedAtmosphere)
             }
         }
+        .background(watchSync)
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             withAnimation(.easeOut(duration: 0.2)) { keyboardUp = true }
         }
@@ -841,6 +842,108 @@ struct ContentView: View {
         parts.append("pack: \(payload.pack) / \(payload.atmosphere)")
         manager.dismissIncoming()
         return ReportTarget(name: payload.fromName, evidence: parts.joined(separator: " \u{2022} "))
+    }
+
+    // MARK: Apple Watch
+
+    /// Invisible view that keeps the watch's picture of the inbox, the radar
+    /// and Ghost Mode current. Kept out of `body` so the type checker does
+    /// not have to carry it.
+    private var watchSync: some View {
+        Color.clear
+            .onAppear {
+                WatchLink.shared.onCommand = { command in handleWatch(command) }
+                WatchLink.shared.activate()
+                pushWatchState()
+            }
+            .onChange(of: moderation.received) { _, _ in pushWatchState() }
+            .onChange(of: manager.availablePeers) { _, _ in pushWatchState() }
+            .onChange(of: manager.isDiscoverable) { _, _ in pushWatchState() }
+            .onChange(of: winkName) { _, _ in pushWatchState() }
+    }
+
+    private func pushWatchState() {
+        let winks: [WatchWink] = moderation.received.prefix(20).map { wink in
+            let p = wink.payload
+            return WatchWink(
+                id: wink.id,
+                fromName: p.fromName,
+                kind: Composer.display(p.atmosphere),
+                text: p.text,
+                symbolName: p.symbolName ?? p.photoSymbolName,
+                moodHex: p.moodColorHex,
+                emoji: p.emojiSequence,
+                zodiac: p.zodiacSign,
+                hasPhoto: p.photoData != nil,
+                hasVoice: p.voiceData != nil,
+                secret: p.secretUntilTapped,
+                date: wink.date
+            )
+        }
+        let peers: [WatchPeer] = manager.availablePeers.map { peer in
+            WatchPeer(id: peer.id, name: peer.winkName, locked: manager.isLocked(peer))
+        }
+        WatchLink.shared.push(WatchState(
+            name: displayName,
+            discoverable: manager.isDiscoverable,
+            peers: peers,
+            winks: winks
+        ))
+    }
+
+    /// Everything the watch asks for goes through the phone's own rules:
+    /// `send` runs the content filter and the one-shot lock, and report and
+    /// block land in the same ModerationStore as a tap on the phone.
+    private func handleWatch(_ command: WatchCommand) {
+        let wink = command.winkID.flatMap { id in moderation.received.first { $0.id == id } }
+
+        switch command.kind {
+        case .refresh:
+            break
+        case .ghost:
+            manager.toggleGhostMode()
+        case .send, .reply:
+            var target: WinkPeer?
+            if let id = command.peerID {
+                target = manager.availablePeers.first { $0.id == id }
+            } else if let wink {
+                target = manager.availablePeers.first { $0.winkName == wink.fromName }
+            }
+            guard let peer = target else {
+                manager.delivery = .failed(wink?.fromName ?? "them")
+                break
+            }
+            let card = WinkMessage(
+                text: command.text ?? "",
+                pack: "Watch",
+                atmosphere: Composer.symbols.atmosphere,
+                ink: Composer.symbols.ink,
+                symbolName: command.symbolName ?? WinkSymbol.send
+            )
+            send(card, to: peer, kind: command.kind == .reply ? .reply : .wink)
+        case .remove:
+            if let wink { moderation.remove(wink) }
+        case .report:
+            if let wink {
+                _ = moderation.report(
+                    name: wink.fromName,
+                    reason: .other,
+                    details: "Reported from Apple Watch",
+                    evidence: wink.payload.text
+                )
+                moderation.remove(wink)
+            }
+        case .block:
+            if let wink {
+                if let peer = manager.availablePeers.first(where: { $0.winkName == wink.fromName }) {
+                    manager.block(peer)
+                } else {
+                    moderation.block(wink.fromName)
+                }
+                moderation.remove(wink)
+            }
+        }
+        pushWatchState()
     }
 
     /// Guideline 1.2: remove a card from the device immediately.
