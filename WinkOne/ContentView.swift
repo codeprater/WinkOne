@@ -10,6 +10,7 @@ struct ContentView: View {
     @StateObject private var manager = MultipeerManager()
     @StateObject private var location = LocationProvider()
     @ObservedObject private var moderation = ModerationStore.shared
+    @ObservedObject private var ejection = EjectionList.shared
 
     @State private var selectedAtmosphere = "Stadium"
     @State private var selectedDeckIndex = 0
@@ -284,6 +285,12 @@ struct ContentView: View {
             deliveryToast
                 .zIndex(4)
 
+            // Guideline 1.2: a device the developer ejected is locked out.
+            if ejection.isThisDeviceEjected {
+                EjectedView()
+                    .zIndex(20)
+            }
+
             if !hasAgreed {
                 AgreementGateView(acceptedVersion: $agreedTermsVersion) {
                     if !onboarded {
@@ -374,6 +381,7 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in
             // Coming back from the background is where discovery usually dies.
             if phase == .active {
+                EjectionList.shared.refresh()
                 manager.wake()
                 nudgeDock(expand: true)
             } else {
@@ -390,7 +398,8 @@ struct ContentView: View {
                     showInbox = false
                     safetySheet = .report(ReportTarget(
                         name: wink.fromName,
-                        evidence: wink.payload.text
+                        evidence: wink.payload.text,
+                        key: wink.senderKey ?? ""
                     ))
                 },
                 onDismiss: { showInbox = false }
@@ -696,6 +705,7 @@ struct ContentView: View {
     }
 
     private func send(_ card: WinkMessage, to peer: WinkPeer, kind: WinkPayload.Kind) {
+        guard !ejection.isThisDeviceEjected else { return }
         if let reason = ContentFilter.check(message: card).reason {
             moderation.noteFiltered()
             manager.delivery = .blocked(reason)
@@ -788,6 +798,7 @@ struct ContentView: View {
     }
 
     private func presentSendSheet() {
+        guard !ejection.isThisDeviceEjected else { return }
         let card = currentCard
 
         // AirDrop and Messages handle a bare audio item inconsistently, so
@@ -840,8 +851,9 @@ struct ContentView: View {
         if let symbol = payload.symbolName { parts.append("symbol: \(symbol)") }
         if let place = payload.placeName { parts.append("place: \(place)") }
         parts.append("pack: \(payload.pack) / \(payload.atmosphere)")
+        let key = manager.incomingPeer.map { $0.uid.isEmpty ? "" : $0.id } ?? ""
         manager.dismissIncoming()
-        return ReportTarget(name: payload.fromName, evidence: parts.joined(separator: " \u{2022} "))
+        return ReportTarget(name: payload.fromName, evidence: parts.joined(separator: " \u{2022} "), key: key)
     }
 
     // MARK: Apple Watch
@@ -852,6 +864,7 @@ struct ContentView: View {
     private var watchSync: some View {
         Color.clear
             .onAppear {
+                EjectionList.shared.refresh(force: true)
                 WatchLink.shared.onCommand = { command in handleWatch(command) }
                 WatchLink.shared.activate()
                 pushWatchState()
@@ -860,6 +873,14 @@ struct ContentView: View {
             .onChange(of: manager.availablePeers) { _, _ in pushWatchState() }
             .onChange(of: manager.isDiscoverable) { _, _ in pushWatchState() }
             .onChange(of: winkName) { _, _ in pushWatchState() }
+            .onChange(of: ejection.isThisDeviceEjected) { _, ejected in
+                // Ejected while the app is open: drop off the radar at once.
+                if ejected, manager.isDiscoverable { manager.toggleGhostMode() }
+            }
+            .onChange(of: ejection.keys) { _, _ in
+                // Someone nearby was just ejected: take them off this radar.
+                manager.availablePeers.removeAll { moderation.isBlocked(key: $0.id) }
+            }
     }
 
     private func pushWatchState() {
@@ -925,13 +946,17 @@ struct ContentView: View {
             if let wink { moderation.remove(wink) }
         case .report:
             if let wink {
-                _ = moderation.report(
+                let report = moderation.report(
                     name: wink.fromName,
+                    key: wink.senderKey ?? "",
                     reason: .other,
                     details: "Reported from Apple Watch",
                     evidence: wink.payload.text
                 )
                 moderation.remove(wink)
+                // The phone has no sheet to show here, so the report is
+                // queued for the developer the next time the app can send it.
+                ReportOutbox.shared.add(report)
             }
         case .block:
             if let wink {

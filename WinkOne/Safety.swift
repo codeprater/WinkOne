@@ -8,7 +8,7 @@ import SwiftUI
 /// before they can create or receive user generated content.
 enum WinkAgreement {
     /// Bump this string whenever the terms change — users are re-prompted.
-    static let version = "2026.09.1"
+    static let version = "2026.10.1"
 
     /// Shown inside the app so users always have a way to reach a human.
     static let supportEmail = "prater10@icloud.com"
@@ -34,7 +34,7 @@ enum WinkAgreement {
     static let text = """
     WINK END USER LICENSE AGREEMENT AND CONTENT POLICY
 
-    Last updated: September 2026
+    Last updated: October 2026
 
     1. ELIGIBILITY. 18+
     WINK is rated 18+. You must be at least \(minimumAge) years old to use this app. \
@@ -57,15 +57,19 @@ enum WinkAgreement {
     Attempting to defeat the filter is itself a violation of these terms.
 
     4. REPORTING
-    Every WINK you receive can be reported from the card itself or from Safety \
-    Center. Reporting a user immediately removes their content from your device \
-    and blocks them from contacting you again.
+    Every WINK you receive can be reported from the card itself, from your Inbox, \
+    or from Safety Center. Reporting a user immediately removes their content \
+    from your device and blocks them from contacting you again. The report goes \
+    to the developer with the sender's WINK ID, a random identifier for their \
+    device, so the right device can be removed.
 
     5. OUR COMMITMENT. \(responseWindowHours) HOURS
     We act on every report of objectionable content within \(responseWindowHours) \
     hours. Acting means removing the offending content and ejecting the user who \
-    provided it. Accounts and devices found to be sending objectionable content \
-    are permanently barred from WINK.
+    provided it: their device is added to the WINK removal list, which every copy \
+    of WINK checks. An ejected device disappears from everyone's radar, its cards \
+    are deleted from every inbox, and it can no longer send or receive anything \
+    on WINK.
 
     6. BLOCKING AND REMOVAL
     You may block any user at any time, and you may remove any WINK from your \
@@ -418,6 +422,11 @@ struct WinkReport: Codable, Identifiable, Hashable {
     let details: String
     let evidence: String
     let date: Date
+    /// The sender's WINK ID ("uid:…"). This, not the display name, is what the
+    /// developer adds to the ejection list. Nil on reports filed before 1.3.
+    var reportedKey: String?
+    /// The reporter's own WINK ID, so the developer can follow up.
+    var reporterKey: String?
 
     init(
         id: UUID = UUID(),
@@ -425,7 +434,9 @@ struct WinkReport: Codable, Identifiable, Hashable {
         reason: String,
         details: String,
         evidence: String,
-        date: Date = Date()
+        date: Date = Date(),
+        reportedKey: String? = nil,
+        reporterKey: String? = nil
     ) {
         self.id = id
         self.reportedName = reportedName
@@ -433,6 +444,8 @@ struct WinkReport: Codable, Identifiable, Hashable {
         self.details = details
         self.evidence = evidence
         self.date = date
+        self.reportedKey = reportedKey
+        self.reporterKey = reporterKey
     }
 }
 
@@ -440,11 +453,15 @@ struct ReceivedWink: Codable, Identifiable, Equatable {
     let id: UUID
     let payload: WinkPayload
     let date: Date
+    /// The sender's WINK ID ("uid:…") when the radar knew it. Lets a report
+    /// from the inbox name the exact device to eject.
+    var senderKey: String?
 
-    init(id: UUID = UUID(), payload: WinkPayload, date: Date = Date()) {
+    init(id: UUID = UUID(), payload: WinkPayload, date: Date = Date(), senderKey: String? = nil) {
         self.id = id
         self.payload = payload
         self.date = date
+        self.senderKey = senderKey
     }
 
     var fromName: String { payload.fromName }
@@ -517,7 +534,19 @@ final class ModerationStore: ObservableObject {
     /// Identity-first. A blocked peer stays blocked through any rename.
     func isBlocked(key: String) -> Bool {
         guard !key.isEmpty else { return false }
-        return blocked.contains { $0.key == key }
+        // Ejected by the developer counts as blocked on every device.
+        return blocked.contains { $0.key == key } || EjectionList.shared.contains(key)
+    }
+
+    /// Called when the developer's ejection list changes: everything those
+    /// users sent leaves the inbox at once.
+    func purgeEjected(_ keys: Set<String>) {
+        let before = received.count
+        received.removeAll { wink in
+            guard let key = wink.senderKey else { return false }
+            return keys.contains(key)
+        }
+        if received.count != before { persist() }
     }
 
     /// Kept for surfaces that only know a typed name — the report sheet, and
@@ -572,6 +601,7 @@ final class ModerationStore: ObservableObject {
     @discardableResult
     func report(
         name: String,
+        key: String = "",
         reason: ReportReason,
         details: String,
         evidence: String
@@ -580,21 +610,24 @@ final class ModerationStore: ObservableObject {
             reportedName: name.isEmpty ? "Unknown sender" : name,
             reason: reason.rawValue,
             details: details.trimmingCharacters(in: .whitespacesAndNewlines),
-            evidence: ContentFilter.masked(evidence)
+            evidence: ContentFilter.masked(evidence),
+            reportedKey: key.isEmpty ? nil : key,
+            reporterKey: EjectionList.localKey
         )
         reports.insert(report, at: 0)
-        // Reporting ejects the sender and removes their content on the spot.
-        block(name)
+        // Reporting blocks the sender on this device and removes their content
+        // on the spot. The developer then ejects them for everyone.
+        block(key: key, name: name)
         persist()
         return report
     }
 
     // MARK: Local history ("the feed")
 
-    func remember(_ payload: WinkPayload) {
+    func remember(_ payload: WinkPayload, senderKey: String? = nil) {
         // The card on screen keeps its full-size photo; the archived copy does
         // not need one.
-        received.insert(ReceivedWink(payload: payload.historySafe), at: 0)
+        received.insert(ReceivedWink(payload: payload.historySafe, senderKey: senderKey), at: 0)
         if received.count > historyLimit {
             received.removeLast(received.count - historyLimit)
         }
@@ -665,7 +698,7 @@ final class ModerationStore: ObservableObject {
             if let data = defaults.data(forKey: receivedKey),
                let decoded = try? decoder.decode([ReceivedWink].self, from: data) {
                 received = decoded.prefix(historyLimit).map {
-                    ReceivedWink(id: $0.id, payload: $0.payload.historySafe, date: $0.date)
+                    ReceivedWink(id: $0.id, payload: $0.payload.historySafe, date: $0.date, senderKey: $0.senderKey)
                 }
             }
             if let data = defaults.data(forKey: sentKey),

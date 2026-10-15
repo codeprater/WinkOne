@@ -67,6 +67,11 @@ final class MultipeerManager: NSObject, ObservableObject {
     }
 
     func bootstrap(name: String, atmosphere: String) {
+        // An ejected device never starts advertising or browsing.
+        guard !EjectionList.shared.isThisDeviceEjected else {
+            isDiscoverable = false
+            return
+        }
         let cleanName = Self.sanitizedName(name)
         if session != nil, cleanName == winkName, self.atmosphere == atmosphere {
             return
@@ -130,7 +135,7 @@ final class MultipeerManager: NSObject, ObservableObject {
     /// Guideline 1.2: a mechanism for users to flag objectionable content.
     /// Reporting removes the content immediately and ejects the sender.
     func report(_ peer: WinkPeer?, name: String, reason: ReportReason, details: String, evidence: String) {
-        moderation.report(name: name, reason: reason, details: details, evidence: evidence)
+        moderation.report(name: name, key: peer?.id ?? "", reason: reason, details: details, evidence: evidence)
         if let peer {
             availablePeers.removeAll { $0.id == peer.id }
         }
@@ -284,6 +289,8 @@ final class MultipeerManager: NSObject, ObservableObject {
     }
 
     private func start() {
+        // A device the developer has ejected never goes back on the radar.
+        guard !EjectionList.shared.isThisDeviceEjected else { return }
         serviceAdvertiser?.startAdvertisingPeer()
         if serviceBrowser == nil, let peerId = myPeerId {
             let browser = MCNearbyServiceBrowser(peer: peerId, serviceType: serviceType)
@@ -538,9 +545,12 @@ extension MultipeerManager: MCSessionDelegate {
                 return
             }
 
-            moderation.remember(payload)
             let peer = availablePeers.first(where: { $0.peerId == peerID })
                 ?? WinkPeer(peerId: peerID, winkName: payload.fromName, atmosphere: payload.atmosphere)
+            // Blocked or ejected by identity, even mid-session.
+            if moderation.isBlocked(key: peer.id) { return }
+
+            moderation.remember(payload, senderKey: peer.uid.isEmpty ? nil : peer.id)
             queue.append(IncomingWink(payload: payload, peer: peer))
         }
     }

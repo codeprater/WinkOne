@@ -1,3 +1,5 @@
+import Combine
+import MessageUI
 import SwiftUI
 import UIKit
 
@@ -148,6 +150,8 @@ struct SafetyCenterView: View {
 
     @State private var reportTarget: ReportTarget?
     @State private var showTerms = false
+    @State private var delivering: WinkReport?
+    @ObservedObject private var outbox = ReportOutbox.shared
 
     var body: some View {
         NavigationStack {
@@ -167,7 +171,28 @@ struct SafetyCenterView: View {
                 } header: {
                     Text("Get help")
                 } footer: {
-                    Text("\(WinkAgreement.supportEmail)\nEvery report of objectionable content is reviewed and acted on within \(WinkAgreement.responseWindowHours) hours. Offending content is removed and the user who sent it is ejected from WINK.")
+                    Text("\(WinkAgreement.supportEmail)\nEvery report of objectionable content is reviewed and acted on within \(WinkAgreement.responseWindowHours) hours. Offending content is removed and the user who sent it is ejected from WINK: their device is removed for everyone, not just for you.")
+                }
+
+                if !outbox.pending.isEmpty {
+                    Section {
+                        ForEach(outbox.pending) { report in
+                            Button {
+                                delivering = report
+                            } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Label("Send report: \(report.reportedName)", systemImage: "paperplane.fill")
+                                    Text(report.reason)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Reports waiting to send")
+                    } footer: {
+                        Text("These reports have not reached the developer yet. Tap one to send it.")
+                    }
                 }
 
                 Section {
@@ -203,7 +228,8 @@ struct SafetyCenterView: View {
                                 onReport: {
                                     reportTarget = ReportTarget(
                                         name: wink.fromName,
-                                        evidence: evidence(for: wink)
+                                        evidence: evidence(for: wink),
+                                        key: wink.senderKey ?? ""
                                     )
                                 },
                                 onRemove: { moderation.remove(wink) }
@@ -262,8 +288,13 @@ struct SafetyCenterView: View {
 
                 Section {
                     Button("Terms & content policy") { showTerms = true }
+                    LabeledContent("Your WINK ID") {
+                        Text(EjectionList.localKey)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
                 } footer: {
-                    Text("WINK \(WinkAgreement.supportEmail)")
+                    Text("WINK \(WinkAgreement.supportEmail)\nInclude your WINK ID if you write to us about your own account.")
                 }
             }
             .navigationTitle("Safety Center")
@@ -278,6 +309,11 @@ struct SafetyCenterView: View {
             }
             .sheet(isPresented: $showTerms) {
                 TermsView()
+            }
+            .sheet(item: $delivering) { report in
+                ReportDeliverySheet(report: report) { sent in
+                    if sent { outbox.markSent(report) }
+                }
             }
         }
     }
@@ -322,6 +358,9 @@ struct ReportTarget: Identifiable {
     let id = UUID()
     var name: String
     var evidence: String
+    /// The sender's WINK ID when known. Goes in the report so the developer
+    /// can eject that exact device.
+    var key: String = ""
 }
 
 struct ReportSheet: View {
@@ -333,6 +372,7 @@ struct ReportSheet: View {
     @State private var reason: ReportReason = .sexual
     @State private var details = ""
     @State private var submitted = false
+    @State private var delivery: WinkReport?
 
     var body: some View {
         NavigationStack {
@@ -380,10 +420,17 @@ struct ReportSheet: View {
                 }
             }
             .onAppear { name = target.name }
-            .alert("Report sent", isPresented: $submitted) {
+            .sheet(item: $delivery, onDismiss: { submitted = true }) { report in
+                ReportDeliverySheet(report: report) { sent in
+                    // Not sent (cancelled, or no mail account): keep it in the
+                    // Safety Center outbox so it still reaches the developer.
+                    if !sent { ReportOutbox.shared.add(report) }
+                }
+            }
+            .alert("Report filed", isPresented: $submitted) {
                 Button("OK") { dismiss() }
             } message: {
-                Text("The content is removed and \(name.isEmpty ? "the sender" : name) is blocked. We'll act on this within \(WinkAgreement.responseWindowHours) hours.")
+                Text("The content is removed and \(name.isEmpty ? "the sender" : name) is blocked on this device. We act on every report within \(WinkAgreement.responseWindowHours) hours, removing the content and ejecting the user from WINK.")
             }
         }
     }
@@ -391,12 +438,14 @@ struct ReportSheet: View {
     private func submit() {
         let report = moderation.report(
             name: name,
+            key: target.key,
             reason: reason,
             details: details,
             evidence: target.evidence
         )
-        SupportMail.send(report: report)
-        submitted = true
+        // Hand the report to the developer: Mail inside the app, or a
+        // copyable report when this device has no mail account.
+        delivery = report
     }
 }
 
@@ -439,14 +488,25 @@ enum SupportMail {
         UIApplication.shared.open(url)
     }
 
-    static func send(report: WinkReport) {
-        let body = """
+    static func subject(for report: WinkReport) -> String {
+        "WINK report: \(report.reason)"
+    }
+
+    /// Everything the developer needs to act: the sender's WINK ID is what
+    /// goes on the ejection list.
+    static func body(for report: WinkReport) -> String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return """
         WINK content report
 
         Report ID: \(report.id.uuidString)
         Date: \(report.date.formatted())
         Reported user: \(report.reportedName)
+        Reported WINK ID: \(report.reportedKey ?? "unknown (sender on an older build)")
         Reason: \(report.reason)
+        Reporter WINK ID: \(report.reporterKey ?? EjectionList.localKey)
+        App: \(version) (\(build))
 
         Details:
         \(report.details.isEmpty ? "(none)" : report.details)
@@ -454,6 +514,195 @@ enum SupportMail {
         Content:
         \(report.evidence.isEmpty ? "(none)" : report.evidence)
         """
-        open(subject: "WINK report: \(report.reason)", body: body)
+    }
+
+    static func send(report: WinkReport) {
+        open(subject: subject(for: report), body: body(for: report))
+    }
+}
+
+// MARK: - Report delivery
+
+/// Gets a report to the developer. Mail inside the app when the device has a
+/// mail account; otherwise the full report, ready to copy, with the address.
+/// Never a silent no-op: a report that is not sent waits in the outbox.
+struct ReportDeliverySheet: View {
+    let report: WinkReport
+    var onFinish: (Bool) -> Void = { _ in }
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var copied = false
+
+    var body: some View {
+        if MailComposer.canSend {
+            MailComposer(
+                to: WinkAgreement.supportEmail,
+                subject: SupportMail.subject(for: report),
+                body: SupportMail.body(for: report)
+            ) { sent in
+                finish(sent)
+            }
+            .ignoresSafeArea()
+        } else {
+            fallback
+        }
+    }
+
+    private var fallback: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Send this report to \(WinkAgreement.supportEmail)")
+                        .font(.headline)
+                    Text("This device has no Mail account set up. Copy the report and send it from any email app. We act on it within \(WinkAgreement.responseWindowHours) hours.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        UIPasteboard.general.string = "To: \(WinkAgreement.supportEmail)\nSubject: \(SupportMail.subject(for: report))\n\n\(SupportMail.body(for: report))"
+                        copied = true
+                    } label: {
+                        Label(copied ? "Copied" : "Copy report", systemImage: copied ? "checkmark" : "doc.on.doc")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Text(SupportMail.body(for: report))
+                        .font(.system(.footnote, design: .monospaced))
+                        .textSelection(.enabled)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.12)))
+                }
+                .padding(20)
+            }
+            .navigationTitle("Send report")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { finish(copied) }
+                }
+            }
+        }
+    }
+
+    private func finish(_ sent: Bool) {
+        onFinish(sent)
+        dismiss()
+    }
+}
+
+struct MailComposer: UIViewControllerRepresentable {
+    static var canSend: Bool { MFMailComposeViewController.canSendMail() }
+
+    let to: String
+    let subject: String
+    let body: String
+    var onFinish: (Bool) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onFinish: onFinish) }
+
+    func makeUIViewController(context: Context) -> MFMailComposeViewController {
+        let controller = MFMailComposeViewController()
+        controller.mailComposeDelegate = context.coordinator
+        controller.setToRecipients([to])
+        controller.setSubject(subject)
+        controller.setMessageBody(body, isHTML: false)
+        return controller
+    }
+
+    func updateUIViewController(_ controller: MFMailComposeViewController, context: Context) {}
+
+    final class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
+        let onFinish: (Bool) -> Void
+
+        init(onFinish: @escaping (Bool) -> Void) {
+            self.onFinish = onFinish
+        }
+
+        nonisolated func mailComposeController(
+            _ controller: MFMailComposeViewController,
+            didFinishWith result: MFMailComposeResult,
+            error: Error?
+        ) {
+            let sent = result == .sent || result == .saved
+            Task { @MainActor in self.onFinish(sent) }
+        }
+    }
+}
+
+/// Reports that have not reached the developer yet: cancelled mail, no mail
+/// account, or filed from Apple Watch. Shown in Safety Center until sent.
+final class ReportOutbox: ObservableObject {
+    static let shared = ReportOutbox()
+
+    @Published private(set) var pending: [WinkReport] = []
+
+    private let storageKey = "wink.reportOutbox.v1"
+
+    private init() {
+        if let data = UserDefaults.standard.data(forKey: storageKey),
+           let saved = try? JSONDecoder().decode([WinkReport].self, from: data) {
+            pending = saved
+        }
+    }
+
+    func add(_ report: WinkReport) {
+        guard !pending.contains(where: { $0.id == report.id }) else { return }
+        pending.insert(report, at: 0)
+        save()
+    }
+
+    func markSent(_ report: WinkReport) {
+        pending.removeAll { $0.id == report.id }
+        save()
+    }
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(pending) {
+            UserDefaults.standard.set(data, forKey: storageKey)
+        }
+    }
+}
+
+// MARK: - Ejected device
+
+/// Shown when the developer has ejected this device. Nothing can be sent or
+/// received; the only way forward is the appeal address.
+struct EjectedView: View {
+    var body: some View {
+        ZStack {
+            WinkColor.night.ignoresSafeArea()
+            VStack(spacing: 18) {
+                Image(systemName: "hand.raised.fill")
+                    .font(.system(size: 44, weight: .bold))
+                    .foregroundStyle(WinkColor.ember)
+                Text("Removed from WINK")
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text("This device was removed after a report of objectionable content, under the WINK terms. It can no longer send or receive winks.")
+                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .multilineTextAlignment(.center)
+                Button {
+                    SupportMail.open(
+                        subject: "WINK appeal",
+                        body: "WINK ID: \(EjectionList.localKey)\n\n"
+                    )
+                } label: {
+                    Text("Appeal: \(WinkAgreement.supportEmail)")
+                        .font(WinkFont.label(13))
+                        .foregroundStyle(WinkColor.night)
+                        .padding(.horizontal, 18)
+                        .frame(minHeight: 44)
+                        .background(Capsule().fill(WinkColor.volt))
+                }
+                Text(EjectionList.localKey)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .textSelection(.enabled)
+            }
+            .padding(32)
+        }
     }
 }
